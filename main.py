@@ -21,15 +21,14 @@ def log_experiment(accuracy, duration, n_samples, neurons, notes):
     print(f"\n[Log] Saved to {filename}")
 
 def run_benchmark():
-    data_path = r"C:\Users\Maxwell Wilson\OneDrive\Documents\Quantum_snn_benchmark\mnist_data"
+    data_path = r"C:\Users\Maxwell Wilson\OneDrive\Documents\Quantum_snn_benchmark\quantum-cortex\mnist_data"
     loader = LocalMNISTLoader(data_path)
     
-    # CONFIG
     NEURONS_PER_CLASS = 20
-    N_SAMPLES = 10000
+    N_SAMPLES = 30000 # Sufficient to see 90% if it works
     
     try:
-        print("--- Quantum Cortex (Recurrent Phase + Astrocyte Regulation) ---")
+        print("--- Quantum Cortex (Stabilized: Synaptic Scaling) ---")
         images = loader.load_images('train-images.idx3-ubyte')
         labels = loader.load_labels('train-labels.idx1-ubyte')
         
@@ -42,7 +41,6 @@ def run_benchmark():
         optics = FourierOptics(shape=(28, 28))
         
         print("-> Initializing Cortex...")
-        # Input = 3136 (Fourier), Output = 200 (20 * 10)
         snn = QuantumCortex(num_inputs=3136, num_classes=10, neurons_per_class=NEURONS_PER_CLASS)
         
         correct_count = 0
@@ -54,13 +52,12 @@ def run_benchmark():
             img_2d = images[i].reshape(28, 28)
             features = optics.apply(img_2d)
             
-            # Return astrocyte_gain for monitoring
-            is_correct, pred, gain = snn.process_image(features, labels[i], train=True)
+            is_correct, pred = snn.process_image(features, labels[i], train=True)
             if is_correct: correct_count += 1
             
             if (i + 1) % 1000 == 0:
                 acc = (correct_count / (i + 1)) * 100
-                print(f"Sample {i+1} | Acc: {acc:.2f}% | Pred: {pred}/{labels[i]} | Glial Gain: {gain:.2f}")
+                print(f"Sample {i+1} | Acc: {acc:.2f}% | Pred: {pred}/{labels[i]}")
                 
             if (i + 1) % 10000 == 0:
                 snn.visualize_cortex_ascii(0)
@@ -71,7 +68,7 @@ def run_benchmark():
         print(f"\nCortex Run Complete.")
         print(f"Final Accuracy: {final_acc:.2f}%")
         
-        log_experiment(final_acc, total_time, N_SAMPLES, NEURONS_PER_CLASS, "Quantum Cortex: Recurrent + Astrocytes")
+        log_experiment(final_acc, total_time, N_SAMPLES, NEURONS_PER_CLASS, "Cortex: Renormalized (No Pruning)")
 
     except Exception as e:
         print(f"ERROR: {e}")
