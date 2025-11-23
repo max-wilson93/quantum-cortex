@@ -2,26 +2,33 @@ import numpy as np
 import cmath
 
 class QuantumCortex:
-    def __init__(self, num_inputs, num_classes, neurons_per_class):
+    def __init__(self, num_inputs, num_classes, neurons_per_class, config=None):
         self.num_inputs = num_inputs
         self.num_outputs = num_classes * neurons_per_class
         self.neurons_per_class = neurons_per_class
         self.num_classes = num_classes
         
-        # --- PHYSICS CONFIG (L2 Unitary Mode) ---
-        self.learning_rate = 0.025 
-        self.phase_flexibility = 0.125
-        self.input_threshold = 0.35
-        self.kerr_constant = 0.5
+        # --- HYPERPARAMETERS (Injectable for Monte Carlo) ---
+        if config:
+            self.learning_rate = config.get('learning_rate', 0.025)
+            self.phase_flexibility = config.get('phase_flexibility', 0.125)
+            self.lateral_strength = config.get('lateral_strength', 0.2)
+            self.input_threshold = config.get('input_threshold', 0.35)
+            self.kerr_constant = config.get('kerr_constant', 0.5)
+            self.system_energy = config.get('system_energy', 10.0)
+        else:
+            # The "Golden" Defaults (86% Run)
+            self.learning_rate = 0.025
+            self.phase_flexibility = 0.125
+            self.lateral_strength = 0.2
+            self.input_threshold = 0.35
+            self.kerr_constant = 0.5
+            self.system_energy = 10.0
         
         self.time_steps = 4
-        self.lateral_strength = 0.2
         
-        # Target Energy (The "Volume" of the system)
-        # We clamp the total energy of the cortex to this value every step.
-        self.system_energy = 10.0 
-        
-        # Weights
+        # --- WEIGHTS ---
+        # Standard fixed allocation
         init_mag = np.ones((num_inputs, self.num_outputs)) * 0.05
         self.W_in = init_mag * np.exp(1j * np.zeros((num_inputs, self.num_outputs)))
         self.W_lat = np.eye(self.num_outputs, dtype=complex) * 0.1
@@ -32,14 +39,13 @@ class QuantumCortex:
 
     def normalize_state(self, state_vector):
         """
-        UNITARY OPERATOR (L2 Normalization):
-        Preserves contrast but prevents explosion.
+        UNITARY L2 NORMALIZATION
+        The core stabilizer of the 86% model.
         """
         current_energy = np.linalg.norm(state_vector)
         if current_energy > 0:
             scale = self.system_energy / current_energy
-            # Only scale DOWN (damping), never up (amplification of noise)
-            if scale < 1.0:
+            if scale < 1.0: # Only damp, never amplify noise
                 state_vector *= scale
         return state_vector
 
@@ -58,13 +64,13 @@ class QuantumCortex:
             # 3. Integrate
             cortex_state = feedforward + feedback
             
-            # 4. Kerr Effect (Phase Twist)
+            # 4. Kerr Non-Linearity
             mags = np.abs(cortex_state)
             phases = np.angle(cortex_state)
             kerr_shift = self.kerr_constant * (mags ** 2)
             cortex_state = mags * np.exp(1j * (phases + kerr_shift))
             
-            # 5. UNITARY NORMALIZATION (The L2 Fix)
+            # 5. L2 Normalization
             cortex_state = self.normalize_state(cortex_state)
 
         # --- READOUT ---
@@ -86,21 +92,24 @@ class QuantumCortex:
             active_inputs = np.where(np.abs(input_wave) > 0.1)[0]
             
             if len(active_inputs) > 0:
-                # A. Resonance (Grow)
+                # A. Resonance (Feedforward)
                 for n in range(start_target, end_target):
                     w_sub = self.W_in[active_inputs, n]
                     w_phase = np.angle(w_sub)
+                    # Rotate to 0
                     rot = np.exp(-1j * self.phase_flexibility * w_phase)
                     w_sub *= rot
+                    # Grow
                     w_sub *= (1.0 + self.learning_rate)
                     self.W_in[active_inputs, n] = w_sub
 
-                # B. Lateral (Cluster)
+                # B. Lateral Clustering (Simple Hebbian)
+                # Boost target block (Self-Excitatory for Class)
                 target_block = self.W_lat[start_target:end_target, start_target:end_target]
                 target_block *= (1.0 + self.learning_rate)
                 self.W_lat[start_target:end_target, start_target:end_target] = target_block
             
-            # C. Damping (Shrink)
+            # C. Damping
             if prediction != label:
                 start_wrong = prediction * self.neurons_per_class
                 end_wrong = start_wrong + self.neurons_per_class
@@ -112,7 +121,7 @@ class QuantumCortex:
                     w_sub *= (1.0 - self.learning_rate)
                     self.W_in[active_inputs, n] = w_sub
 
-            # NORMALIZATION (Weights)
+            # Normalize Weights (L2)
             mags = np.abs(self.W_in)
             phases = np.angle(self.W_in)
             mags = np.clip(mags, 0.0, 1.0)
@@ -123,6 +132,4 @@ class QuantumCortex:
             mags_lat = np.clip(mags_lat, 0.0, 0.5)
             self.W_lat = mags_lat * np.exp(1j * phases_lat)
 
-        # --- CORRECT RETURN STATEMENT ---
-        # Returns: (Boolean Correct?, Int Prediction, Float Total_Energy)
         return prediction == label, prediction, total_energy

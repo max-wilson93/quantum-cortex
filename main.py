@@ -13,18 +13,26 @@ def log_experiment(accuracy, duration, n_samples, neurons, notes):
         writer = csv.writer(file)
         if not file_exists:
             writer.writerow(["Timestamp", "Accuracy", "Duration", "Samples", "Neurons", "Notes"])
-        writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), f"{accuracy:.2f}%", f"{duration:.1f}s", n_samples, neurons, notes])
+        writer.writerow([
+            time.strftime("%Y-%m-%d %H:%M:%S"),
+            f"{accuracy:.2f}%",
+            f"{duration:.1f}s",
+            n_samples,
+            neurons,
+            notes
+        ])
     print(f"\n[Log] Saved to {filename}")
 
 def run_benchmark():
-    data_path = r"C:\Users\Maxwell Wilson\OneDrive\Documents\Quantum_snn_benchmark\quantum-cortex\mnist_data"
+    data_path = r"./mnist_data"
     loader = LocalMNISTLoader(data_path)
     
-    NEURONS_PER_CLASS = 4
-    N_SAMPLES = 60000 
+    # --- STATIC CONFIG (The 86% Winner) ---
+    NEURONS_PER_CLASS = 20 
+    N_SAMPLES = 30000 
     
     try:
-        print("--- Quantum Cortex (Unitary L2 Normalization) ---")
+        print("--- Quantum Cortex (Restored 86% Architecture) ---")
         images = loader.load_images('train-images.idx3-ubyte')
         labels = loader.load_labels('train-labels.idx1-ubyte')
         
@@ -36,24 +44,26 @@ def run_benchmark():
         print("-> Initializing Fourier Lens...")
         optics = FourierOptics(shape=(28, 28))
         
-        print("-> Initializing Cortex...")
+        print(f"-> Initializing Cortex ({NEURONS_PER_CLASS} neurons/class)...")
+        # CORRECT INIT: Uses 'neurons_per_class', not 'max_neurons'
         snn = QuantumCortex(num_inputs=3136, num_classes=10, neurons_per_class=NEURONS_PER_CLASS)
         
         correct_count = 0
         start_time = time.time()
         
+        print(f"-> Starting Training ({N_SAMPLES} samples)...")
+        
         for i in range(N_SAMPLES):
             img_2d = images[i].reshape(28, 28)
             features = optics.apply(img_2d)
             
-            # Unpacking 3 values
+            # 3-Value Unpack
             is_correct, pred, energy = snn.process_image(features, labels[i], train=True)
             
             if is_correct: correct_count += 1
             
             if (i + 1) % 1000 == 0:
                 acc = (correct_count / (i + 1)) * 100
-                # Energy should be clamped near 10.0 (System Energy)
                 print(f"Sample {i+1} | Acc: {acc:.2f}% | Pred: {pred}/{labels[i]} | Energy: {energy:.2f}")
                 
 
@@ -63,7 +73,7 @@ def run_benchmark():
         print(f"\nCortex Run Complete.")
         print(f"Final Accuracy: {final_acc:.2f}%")
         
-        log_experiment(final_acc, total_time, N_SAMPLES, NEURONS_PER_CLASS, "Cortex: Unitary L2 (Fixed Return)")
+        log_experiment(final_acc, total_time, N_SAMPLES, NEURONS_PER_CLASS, "Restored 86% Baseline")
 
     except Exception as e:
         print(f"ERROR: {e}")
