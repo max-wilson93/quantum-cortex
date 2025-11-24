@@ -6,12 +6,10 @@ from mnist_loader import LocalMNISTLoader
 from quantum_cortex import QuantumCortex
 from fourier_optics import FourierOptics
 
-# Remove 'time' from arguments
 def log_experiment(train_acc, test_acc, duration, config, notes):
     filename = "quantum_validation_log.csv"
     file_exists = os.path.isfile(filename)
     
-    # Generate timestamp here instead
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -30,8 +28,7 @@ def log_experiment(train_acc, test_acc, duration, config, notes):
     print(f"\n[Log] Validation results saved to {filename}")
 
 def run_validation():
-    # data_path = r"C:\Users\Maxwell Wilson\OneDrive\Documents\Quantum_snn_benchmark\mnist_data"
-    data_path = r"./mnist_data"
+    data_path = r"./mnist_data" #ubuntu implementation
     loader = LocalMNISTLoader(data_path)
     
     # --- THE 90% WINNING CONFIG ---
