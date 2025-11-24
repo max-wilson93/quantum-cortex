@@ -1,3 +1,3 @@
 Timestamp,Train_Acc,Test_Acc,Duration,Config,Notes
-2025-11-24 01:32:27,71.20%,77.19%,27.7s,"{'learning_rate': 0.09, 'phase_flexibility': 0.1, 'lateral_strength': 0.16, 'input_threshold': 0.7, 'kerr_constant': 0.2, 'system_energy': 40.0}",Validation Run
-2025-11-24 01:57:03,90.30%,90.74%,1450.1s,"{'learning_rate': 0.09, 'phase_flexibility': 0.1, 'lateral_strength': 0.16, 'input_threshold': 0.7, 'kerr_constant': 0.2, 'system_energy': 40.0}",Validation Run
+2025-11-24 01:32:27,71.20%,77.19%,27.7s,"{'learning_rate': 0.09, 'phase_flexibility': 0.1, 'lateral_strength': 0.16, 'input_threshold': 0.7, 'kerr_constant': 0.2, 'system_energy': 40.0}",Validation Run-pre run
+2025-11-24 01:57:03,90.30%,90.74%,1450.1s,"{'learning_rate': 0.09, 'phase_flexibility': 0.1, 'lateral_strength': 0.16, 'input_threshold': 0.7, 'kerr_constant': 0.2, 'system_energy': 40.0}",Validation Run fullest
