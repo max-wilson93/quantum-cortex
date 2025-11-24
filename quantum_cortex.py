@@ -10,20 +10,20 @@ class QuantumCortex:
         
         # --- PHYSICS CONFIG ---
         if config:
-            self.learning_rate = config.get('learning_rate', 0.025)
-            self.phase_flexibility = config.get('phase_flexibility', 0.125)
-            self.lateral_strength = config.get('lateral_strength', 0.2)
-            self.input_threshold = config.get('input_threshold', 0.35)
-            self.kerr_constant = config.get('kerr_constant', 0.5)
-            self.system_energy = config.get('system_energy', 10.0)
+            self.learning_rate = config.get('learning_rate', 0.09)
+            self.phase_flexibility = config.get('phase_flexibility', 0.1)
+            self.lateral_strength = config.get('lateral_strength', 0.16)
+            self.input_threshold = config.get('input_threshold', 0.7)
+            self.kerr_constant = config.get('kerr_constant', 0.2)
+            self.system_energy = config.get('system_energy', 40.0)
         else:
-            # The "Golden" Defaults (86% Run)
-            self.learning_rate = 0.025
-            self.phase_flexibility = 0.125
-            self.lateral_strength = 0.2
-            self.input_threshold = 0.35
-            self.kerr_constant = 0.5
-            self.system_energy = 10.0
+            # The "Golden" Defaults (90+% Run)
+            self.learning_rate = 0.09
+            self.phase_flexibility = 0.1
+            self.lateral_strength = 0.16
+            self.input_threshold = 0.7
+            self.kerr_constant = 0.2
+            self.system_energy = 40.0
         
         # Store initial values for annealing
         self.init_lr = self.learning_rate
@@ -113,7 +113,6 @@ class QuantumCortex:
                     self.W_in[active_inputs, n] = w_sub
 
                 # 2. LATERAL (Simple Hebbian Clustering)
-                # This is the robust logic you wanted. Just strengthen the block.
                 target_block = self.W_lat[start_target:end_target, start_target:end_target]
                 target_block *= (1.0 + self.learning_rate)
                 self.W_lat[start_target:end_target, start_target:end_target] = target_block
