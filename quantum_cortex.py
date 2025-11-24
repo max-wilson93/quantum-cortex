@@ -8,7 +8,7 @@ class QuantumCortex:
         self.neurons_per_class = neurons_per_class
         self.num_classes = num_classes
         
-        # --- HYPERPARAMETERS (Injectable for Monte Carlo) ---
+        # --- PHYSICS CONFIG ---
         if config:
             self.learning_rate = config.get('learning_rate', 0.025)
             self.phase_flexibility = config.get('phase_flexibility', 0.125)
@@ -25,27 +25,36 @@ class QuantumCortex:
             self.kerr_constant = 0.5
             self.system_energy = 10.0
         
+        # Store initial values for annealing
+        self.init_lr = self.learning_rate
+        self.init_flex = self.phase_flexibility
+        
         self.time_steps = 4
         
         # --- WEIGHTS ---
-        # Standard fixed allocation
         init_mag = np.ones((num_inputs, self.num_outputs)) * 0.05
         self.W_in = init_mag * np.exp(1j * np.zeros((num_inputs, self.num_outputs)))
         self.W_lat = np.eye(self.num_outputs, dtype=complex) * 0.1
+
+    def decay_learning_rate(self, progress):
+        """
+        ANNEALING:
+        Linearly decays plasticity.
+        """
+        decay_factor = 1.0 - (progress * 0.9)
+        self.learning_rate = self.init_lr * decay_factor
+        self.phase_flexibility = self.init_flex * decay_factor
 
     def get_phasic_input(self, feature_vector):
         mag = np.where(feature_vector > self.input_threshold, 1.0, 0.0)
         return mag * np.exp(1j * 0)
 
     def normalize_state(self, state_vector):
-        """
-        UNITARY L2 NORMALIZATION
-        The core stabilizer of the 86% model.
-        """
+        """Unitary L2 Normalization (Stability)"""
         current_energy = np.linalg.norm(state_vector)
         if current_energy > 0:
             scale = self.system_energy / current_energy
-            if scale < 1.0: # Only damp, never amplify noise
+            if scale < 1.0: 
                 state_vector *= scale
         return state_vector
 
@@ -92,7 +101,7 @@ class QuantumCortex:
             active_inputs = np.where(np.abs(input_wave) > 0.1)[0]
             
             if len(active_inputs) > 0:
-                # A. Resonance (Feedforward)
+                # 1. FEEDFORWARD (Phase Hebbian)
                 for n in range(start_target, end_target):
                     w_sub = self.W_in[active_inputs, n]
                     w_phase = np.angle(w_sub)
@@ -103,13 +112,13 @@ class QuantumCortex:
                     w_sub *= (1.0 + self.learning_rate)
                     self.W_in[active_inputs, n] = w_sub
 
-                # B. Lateral Clustering (Simple Hebbian)
-                # Boost target block (Self-Excitatory for Class)
+                # 2. LATERAL (Simple Hebbian Clustering)
+                # This is the robust logic you wanted. Just strengthen the block.
                 target_block = self.W_lat[start_target:end_target, start_target:end_target]
                 target_block *= (1.0 + self.learning_rate)
                 self.W_lat[start_target:end_target, start_target:end_target] = target_block
             
-            # C. Damping
+            # 3. DAMPING
             if prediction != label:
                 start_wrong = prediction * self.neurons_per_class
                 end_wrong = start_wrong + self.neurons_per_class
@@ -121,7 +130,7 @@ class QuantumCortex:
                     w_sub *= (1.0 - self.learning_rate)
                     self.W_in[active_inputs, n] = w_sub
 
-            # Normalize Weights (L2)
+            # NORMALIZATION
             mags = np.abs(self.W_in)
             phases = np.angle(self.W_in)
             mags = np.clip(mags, 0.0, 1.0)
@@ -131,5 +140,29 @@ class QuantumCortex:
             phases_lat = np.angle(self.W_lat)
             mags_lat = np.clip(mags_lat, 0.0, 0.5)
             self.W_lat = mags_lat * np.exp(1j * phases_lat)
+            
+            # Zero diagonal
+            np.fill_diagonal(self.W_lat, 0.0)
 
         return prediction == label, prediction, total_energy
+
+    def visualize_cortex_ascii(self, digit_idx):
+        neuron_idx = digit_idx * self.neurons_per_class
+        w_vec = self.W_in[:, neuron_idx]
+        w_vec = w_vec[:784]
+        mags = np.abs(w_vec)
+        
+        print(f"\n--- Cortical State (Ch 0) Output {digit_idx} ---")
+        try:
+            side = 28
+            grid_mag = mags.reshape(side, side)
+            max_mag = np.max(grid_mag)
+            if max_mag == 0: max_mag = 1.0
+            for r in range(0, side, 2): 
+                line = ""
+                for c in range(side):
+                    m = grid_mag[r, c]
+                    if m < (0.2 * max_mag): line += " " 
+                    else: line += "#"
+                print(line)
+        except: pass

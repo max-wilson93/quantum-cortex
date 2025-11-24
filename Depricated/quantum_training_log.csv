@@ -1,0 +1,22 @@
+Timestamp,Accuracy,Duration_Sec,Samples,Neurons_Per_Class, Comments, system
+2025-11-19 14:28:37,10.30%,9.84,2000,5, N/A, windows
+2025-11-19 14:28:57,50.85%,7.33,2000,5, N/A, windows
+2025-11-19 14:35:14,74.58%,73.36,10000,10, changed learning rate to 0.1, windows
+2025-11-19 14:37:11,73.36%,71.48,10000,10, Phase flexibility to 0.25--no change in learning rate, windows
+2025-11-19 14:40:24,74.24%,72.38,10000,10, phase flexibility and learning unchanged from previous run--threshold changed to 0.4 from 0.3, windows
+2025-11-19 14:48:40,72.98%,73.62,10000,10, Gabor filter control--threshold back to 0.3--flexibility 0.25--learning rate 0.1, windows
+2025-11-19 14:53:41,73.23%,112.74,10000,15, Same as above but with 15 neurons per class, windows
+2025-11-19 14:54:47,73.70%,34.72,10000,5, Lateral Quantum coupling trial with 5 neurons per class, windows
+2025-11-19 14:57:00,73.97%,72.97,10000,10,nothing changed from previous lateral coupling run but neurons per class set to 10, windows
+2025-11-19 16:24:27,77.60%,178.59,60000,5, LR: 0.025 LS: 0.275 PF: 0.125 Thresh: 0.35, windows
+2025-11-19 16:30:28,73.46%,23.51,10000,5, Misruns: no updated main with sleeping consolidation, windows
+2025-11-19 16:32:20,77.61%,80.66,30000,5, Misruns: no updated main with sleeping consolidation, windows
+2025-11-19 16:39:57,73.63%,396.5s,10000,5, sleeping control, windows
+2025-11-19 16:45:57,66.21%,335.7s,10000,5, Hippocampal sleeping with consolidation every 500 samples, windows
+2025-11-19 18:28:40,77.06%,405.6s,10000,5, Pseudo-Grand Run: Best Physics + Best Optics, windows
+2025-11-19 18:46:34,75.85%,763.0s,10000,20, Kerr Non-Linearity + Scaled Capacity, windows
+2025-11-19 18:52:19,83.25%,285.1s,10000,10, Fourier Optics + Kerr, windows
+2025-11-19 19:24:14,84.81%,1727.1s,30000,20, Fourier Optics + Kerr, windows
+2025-11-19 19:51:19,84.27%,598.6s,10000,20, Quantum Cortex: Recurrent + Astrocytes, windows
+2025-11-20 00:58,85.55%,unknown,300000,20, Quantum Cortex: Recurrent + L2 normalization, Ubuntu2025-11-22 10:25:48,69.91%,15.5s,10000,4,Cortex: Unitary L2 (Fixed Return)
+2025-11-23 18:43:09,89.84%,1292.3s,60000,5,"{'learning_rate': 0.06, 'phase_flexibility': 0.1, 'lateral_strength': 0.16, 'input_threshold': 0.55, 'kerr_constant': 0.2, 'system_energy': 30.0}",Grand Run: Quantum Trinity (Ensemble)
