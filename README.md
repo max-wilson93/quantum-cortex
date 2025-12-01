@@ -12,6 +12,61 @@ This project implements a novel Quantum-Inspired Neural Architecture that abando
 
 By modeling dendritic integration as a holographic process rather than a linear summation, this model achieves **90.74% accuracy** on the MNIST test set using a strictly Online, One-Shot Learning algorithm (Batch Size 1, 1 Epoch). Notably, the model achieves **Zero Overfitting** (Test Accuracy > Training Accuracy), demonstrating that Phase-Based Encoding captures topological features more robustly than Magnitude-Based Encoding. This offers a theoretical bridge between Holonomic Brain Theory and Optical Computing.
 
+```mermaid
+graph TD
+    subgraph Input ["Input Stage"]
+        A["Raw Image (28x28)"] -->|FFT| B["Spectral Domain"]
+        B -->|Spectral Masking| C["Filtered Spectrum"]
+        C -->|IFFT| D["Spatial Features"]
+        D -->|Threshold > 0.7| E["Gated Phasic Input"]
+    end
+
+    subgraph Ensemble ["The Quantum Trinity (Homogeneous Ensemble)"]
+        direction LR
+        subgraph CortexA ["Cortex A"]
+            F1["Input Layer"] -->|Phase Locking| G1["Recurrent Layer"]
+            G1 -->|Lateral Coupling| G1
+            G1 -->|Kerr Nonlinearity| G1
+            G1 -->|Unitary L2 Norm| G1
+            G1 --> H1["Readout Energy"]
+        end
+        
+        subgraph CortexB ["Cortex B"]
+            F2["Input Layer"] -->|Phase Locking| G2["Recurrent Layer"]
+            G2 -->|Lateral Coupling| G2
+            G2 -->|Kerr Nonlinearity| G2
+            G2 -->|Unitary L2 Norm| G2
+            G2 --> H2["Readout Energy"]
+        end
+        
+        subgraph CortexC ["Cortex C"]
+            F3["Input Layer"] -->|Phase Locking| G3["Recurrent Layer"]
+            G3 -->|Lateral Coupling| G3
+            G3 -->|Kerr Nonlinearity| G3
+            G3 -->|Unitary L2 Norm| G3
+            G3 --> H3["Readout Energy"]
+        end
+    end
+
+    E --> F1
+    E --> F2
+    E --> F3
+
+    subgraph Consensus ["Consensus Mechanism"]
+        H1 --> I["Constructive Interference"]
+        H2 --> I
+        H3 --> I
+        I --> J["Final Prediction"]
+    end
+
+    style Input fill:#f9f,stroke:#333,stroke-width:2px
+    style Ensemble fill:#ccf,stroke:#333,stroke-width:2px
+    style Consensus fill:#cfc,stroke:#333,stroke-width:2px
+    style CortexA fill:#fff,stroke:#666,stroke-width:1px
+    style CortexB fill:#fff,stroke:#666,stroke-width:1px
+    style CortexC fill:#fff,stroke:#666,stroke-width:1px
+```
+
 ## 2. The Theoretical Basis
 Standard Deep Learning treats neurons as switches ($0$ or $1$). This model treats neurons as **Resonators** ($\Psi = A e^{i\theta}$).
 
@@ -81,6 +136,8 @@ Clone the repository:
 git clone [https://github.com/yourusername/quantum-cortex.git](https://github.com/yourusername/quantum-cortex.git)
 cd quantum-cortex
 ```
+
+
 ### Run the Grand Benchmark
 ```bash
 python main.py
