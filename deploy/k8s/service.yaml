@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: quantum-cortex-uw
+  labels: { app: quantum-cortex-uw }
+spec:
+  selector: { app: quantum-cortex-uw }
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+  # ClusterIP: reached in-cluster as http://quantum-cortex-uw.<namespace>.svc
+  # by the CronJob, and from the web app via an Ingress / tunnel (not shown).
+  type: ClusterIP

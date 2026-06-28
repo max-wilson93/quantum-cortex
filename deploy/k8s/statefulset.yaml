@@ -1,0 +1,47 @@
+# The underwriting bridge runs as a SINGLE-replica StatefulSet, not a scaled
+# Deployment: online Hebbian learning is stateful and sequential, so exactly one
+# pod owns the authoritative weights. The PVC persists the cortex snapshot across
+# restarts/reschedules. To scale *inference* later, add a separate read-only
+# Deployment that loads published snapshots — keep the learner singleton.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: quantum-cortex-uw
+  labels: { app: quantum-cortex-uw }
+spec:
+  serviceName: quantum-cortex-uw
+  replicas: 1
+  selector:
+    matchLabels: { app: quantum-cortex-uw }
+  template:
+    metadata:
+      labels: { app: quantum-cortex-uw }
+    spec:
+      containers:
+        - name: bridge
+          image: quantum-cortex-uw:0.1   # built from serving/Dockerfile
+          ports:
+            - containerPort: 8000
+          env:
+            - name: CORTEX_SNAPSHOT_PATH
+              value: /data/cortex_state.npz
+          envFrom:
+            - secretRef: { name: quantum-cortex-uw-secrets }
+          volumeMounts:
+            - name: cortex-state
+              mountPath: /data
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "1", memory: "1Gi" }
+  volumeClaimTemplates:
+    - metadata:
+        name: cortex-state
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

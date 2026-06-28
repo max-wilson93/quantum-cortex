@@ -93,7 +93,13 @@ class QuantumCortex:
             class_energies[c] = np.sum(energies[start:end])
             
         prediction = np.argmax(class_energies)
-        
+
+        # Expose the readout for downstream consumers (e.g. the underwriting
+        # adapter needs per-class energies, not just the argmax). Non-breaking:
+        # process_image still returns the same 3-tuple.
+        self.last_class_energies = class_energies
+        self.last_total_energy = total_energy
+
         # --- LEARNING ---
         if train:
             start_target = label * self.neurons_per_class

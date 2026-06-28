@@ -1,0 +1,34 @@
+# Daily continuous-learning sweep. After the post-funding bank sync lands fresh
+# rows in daily_ledger_sync, this fires /learn-active, which applies one O(1)
+# Hebbian update per funded deal and refreshes dynamic_holdback_percentage.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: quantum-cortex-uw-learn
+spec:
+  schedule: "30 6 * * *"        # 06:30 daily, after the morning banking sync
+  concurrencyPolicy: Forbid     # never overlap learning sweeps
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: trigger
+              image: curlimages/curl:8.11.0
+              env:
+                - name: INGEST_SHARED_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: quantum-cortex-uw-secrets
+                      key: INGEST_SHARED_SECRET
+              command:
+                - sh
+                - -c
+                - >
+                  curl -fsS -X POST
+                  -H "x-ingest-secret: $INGEST_SHARED_SECRET"
+                  http://quantum-cortex-uw.default.svc/api/v1/learn-active
