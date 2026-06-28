@@ -25,6 +25,11 @@ spec:
           env:
             - name: CORTEX_SNAPSHOT_PATH
               value: /data/cortex_state.npz
+            # Trained weights + calibration (written here by the training Job).
+            # If absent, the service runs an untrained model with identity
+            # calibration — safe, but emits uncalibrated risk until promoted.
+            - name: CORTEX_ARTIFACT_DIR
+              value: /data/artifacts
           envFrom:
             - secretRef: { name: quantum-cortex-uw-secrets }
           volumeMounts:

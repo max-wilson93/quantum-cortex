@@ -23,12 +23,13 @@ router = APIRouter(prefix="/api/v1")
 
 _SECRET = os.environ["INGEST_SHARED_SECRET"]
 _SNAPSHOT = os.environ.get("CORTEX_SNAPSHOT_PATH", "/data/cortex_state.npz")
+_ARTIFACT_DIR = os.environ.get("CORTEX_ARTIFACT_DIR")  # trained weights + calibration
 
 _sb: Client = create_client(
     os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 )
 # Single in-process model (authoritative weights; see cortex_adapter docstring).
-_model = UnderwritingCortex(snapshot_path=_SNAPSHOT)
+_model = UnderwritingCortex(snapshot_path=_SNAPSHOT, artifact_dir=_ARTIFACT_DIR)
 
 
 def _auth(secret: str) -> None:
@@ -61,7 +62,14 @@ def _write_terms(lead_id: str, terms: dict) -> None:
 
 
 @router.post("/evaluate-lead/{lead_id}")
-def evaluate_lead(lead_id: str, x_ingest_secret: str = Header(default="")):
+def evaluate_lead(
+    lead_id: str,
+    persist: bool = True,
+    x_ingest_secret: str = Header(default=""),
+):
+    """Score a lead. With persist=false, only computes + returns (no DB writes) —
+    used by PTM's interactive action, which then prices + persists authoritatively
+    via its own economics."""
     _auth(x_ingest_secret)
     rows = _load_ledger(lead_id)
     try:
@@ -70,12 +78,16 @@ def evaluate_lead(lead_id: str, x_ingest_secret: str = Header(default="")):
         raise HTTPException(status_code=422, detail=str(e))
 
     terms = _model.evaluate(image)
+    if not persist:
+        return {"lead_id": lead_id, **terms}
+
     _write_terms(lead_id, terms)
     # Record a syndication rating row capturing the spectral provenance.
     _sb.table("syndication_ratings").insert(
         {
             "interested_party_id": lead_id,
             "factor_rate": terms["calculated_factor_rate"],
+            "pd": terms["calibrated_pd"],
             "spectral_risk_score": terms["spectral_risk_score"],
             "uw_model_version": terms["model_version"],
         }
