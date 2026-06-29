@@ -1,5 +1,32 @@
 # Training data for the underwriting model
 
+## Train today (Freddie Mac — fastest real run)
+Each loan has a long monthly series (for the spectral model) + named variables
+(for attribution). Steps:
+1. Register (free) and download one vintage's two pipe-delimited files from
+   https://www.freddiemac.com/research/datasets/sf-loanlevel-dataset —
+   `historical_data_YYYYQn.txt` (origination) + `historical_data_time_YYYYQn.txt`
+   (performance).
+2. Convert + train:
+   ```bash
+   pip install -r serving/requirements.txt   # numpy/scipy/scikit-image
+   python research/freddie_to_export.py \
+     --origination historical_data_2018Q1.txt \
+     --performance historical_data_time_2018Q1.txt \
+     --out export_freddie.json --sample 8000
+   python research/train_calibrate_backtest.py --data export_freddie.json --out artifacts/
+   ```
+3. Read `artifacts/metrics.json` (champion vs challenger) and
+   `artifacts/variable_impact.json` (how FICO/LTV/DTI move default). The trained
+   `weights.npz`+`calibration.json` are what the serving bridge loads.
+
+Caveat: mortgages, not MCA — this validates the *method* and the variable-impact
+tooling on real, current data. Swap in your internal `deal_outcomes` export
+(Tier 1) the moment labels accrue.
+
+---
+
+
 The model needs two things per deal: a **bank-ledger time-series** (features) and a
 **realized outcome** (default/repaid label). Ranked by relevance.
 

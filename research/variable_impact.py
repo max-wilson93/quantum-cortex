@@ -17,22 +17,9 @@ from __future__ import annotations
 
 import numpy as np
 
+from baseline import record_features as variable_for  # dataset-agnostic variables
+
 EPS = 1e-6
-
-
-def variable_for(rec: dict) -> dict[str, float]:
-    """The quantitative variables we track per deal (extend as sources allow)."""
-    deposits = float(rec.get("monthly_deposits_avg") or 0)
-    neg = float(rec.get("negative_days_avg") or 0)
-    low = float(rec.get("low_days_avg") or 0)
-    return {
-        "cfr": (neg + low) / deposits if deposits > 0 else 0.0,
-        "monthly_deposits_avg": deposits,
-        "negative_days_avg": neg,
-        "low_days_avg": low,
-        "current_positions": float(rec.get("current_positions") or 0),
-        "time_in_business_days": float(rec.get("time_in_business_days") or 0),
-    }
 
 
 def information_value(x: np.ndarray, y: np.ndarray, bins: int = 10) -> tuple[float, list[dict]]:

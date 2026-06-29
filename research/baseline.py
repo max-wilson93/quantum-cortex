@@ -1,23 +1,42 @@
-"""Champion baseline: a CFR-style logistic PD, mirroring PTM's rateDeal().
+"""Champion baseline: a logistic PD over whatever named variables a dataset has.
 
-This is the bar the QuantumCortex challenger must clear. It uses the same
-summary features PTM's first-principles engine uses (cash-flow ratio, positions,
-time-in-business) so the backtest isolates the value of spectral processing.
+This is the bar the QuantumCortex challenger must clear. It is dataset-agnostic:
+records may carry an explicit ``features`` dict (e.g. Freddie Mac FICO/LTV/DTI);
+otherwise it falls back to the MCA summary view (CFR, positions, time-in-business)
+so PTM exports and the synthetic path keep working.
 """
 from __future__ import annotations
 
 import numpy as np
 
 
-def cfr_features(row: dict) -> np.ndarray:
-    """Summary features from a deal record (the monthly-average view)."""
-    deposits = float(row.get("monthly_deposits_avg") or 0)
-    neg_days = float(row.get("negative_days_avg") or 0)
-    low_days = float(row.get("low_days_avg") or 0)
-    cfr = (neg_days + low_days) / deposits if deposits > 0 else 0.0
-    positions = float(row.get("current_positions") or 0)
-    tib_days = float(row.get("time_in_business_days") or 0)
-    return np.array([cfr, positions, tib_days * 1e-3], dtype=float)
+def record_features(rec: dict) -> dict[str, float]:
+    """The tracked quantitative variables for one record.
+
+    Uses rec['features'] when present (any dataset), else derives the MCA view.
+    """
+    feats = rec.get("features")
+    if isinstance(feats, dict) and feats:
+        return {k: _num(v) for k, v in feats.items()}
+
+    deposits = _num(rec.get("monthly_deposits_avg"))
+    neg = _num(rec.get("negative_days_avg"))
+    low = _num(rec.get("low_days_avg"))
+    return {
+        "cfr": (neg + low) / deposits if deposits > 0 else 0.0,
+        "monthly_deposits_avg": deposits,
+        "negative_days_avg": neg,
+        "low_days_avg": low,
+        "current_positions": _num(rec.get("current_positions")),
+        "time_in_business_days": _num(rec.get("time_in_business_days")),
+    }
+
+
+def feature_matrix(records: list[dict]) -> tuple[list[str], np.ndarray]:
+    """(ordered variable names, X matrix) over records, from record_features."""
+    names = list(record_features(records[0]).keys())
+    X = np.array([[record_features(r).get(n, 0.0) for n in names] for r in records], dtype=float)
+    return names, X
 
 
 class LogisticBaseline:
@@ -44,6 +63,13 @@ class LogisticBaseline:
     def predict_pd(self, X: np.ndarray) -> np.ndarray:
         Xs = (X - self.mean) / self.std
         return _sigmoid(Xs @ self.w + self.b)
+
+
+def _num(v, default=0.0) -> float:
+    try:
+        return float(str(v).replace("$", "").replace(",", "").strip())
+    except (TypeError, ValueError):
+        return default
 
 
 def _sigmoid(z: np.ndarray) -> np.ndarray:

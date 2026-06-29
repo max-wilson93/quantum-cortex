@@ -35,7 +35,8 @@ sys.path.insert(0, os.path.join(ROOT, "serving"))
 from fourier_optics import FourierOptics  # noqa: E402
 from quantum_cortex import QuantumCortex  # noqa: E402
 from preprocessing import InsufficientLedgerError, ledger_to_spectral_image  # noqa: E402
-from baseline import LogisticBaseline, cfr_features  # noqa: E402
+from baseline import LogisticBaseline, feature_matrix  # noqa: E402
+from baseline import record_features as record_feats  # noqa: E402
 import calibration as cal  # noqa: E402
 import variable_impact as vi  # noqa: E402
 
@@ -110,10 +111,11 @@ def main():
     ch_risk = np.array([cortex_risk(cortex, feats_te[i]) for i in te_idx])
     ch_pd = cal.apply_platt(ch_risk, a, b)
 
-    # --- Champion: CFR logistic ---
-    Xtr = np.array([cfr_features(train[i]) for i in tr_idx])
+    # --- Champion: logistic over the dataset's named variables ---
+    feat_names, _ = feature_matrix([train[i] for i in tr_idx[:1]])
+    Xtr = np.array([[record_feats(train[i]).get(n, 0.0) for n in feat_names] for i in tr_idx])
     base = LogisticBaseline().fit(Xtr, tr_y.astype(float))
-    Xte = np.array([cfr_features(test[i]) for i in te_idx])
+    Xte = np.array([[record_feats(test[i]).get(n, 0.0) for n in feat_names] for i in te_idx])
     cp_pd = base.predict_pd(Xte)
 
     metrics = {
@@ -132,9 +134,9 @@ def main():
     # Variable-impact attribution over all matured deals (how each quantitative
     # variable moves the default rate) + the champion's signed logistic weights.
     impact = vi.compute_impact(train + test)
-    impact["champion_logistic_weights"] = dict(
-        zip(["cfr", "positions", "tib_x1e-3"], [round(float(w), 4) for w in base.w])
-    )
+    impact["champion_logistic_weights"] = {
+        n: round(float(w), 4) for n, w in zip(feat_names, base.w)
+    }
     metrics["variable_impact"] = impact
 
     os.makedirs(args.out, exist_ok=True)
