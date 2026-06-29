@@ -63,6 +63,32 @@ python research/ingest_dataset.py --transactions installments.csv --labels app_t
   --lab-account SK_ID_CURR --lab-default TARGET --out export_homecredit.json
 ```
 
+## Newer datasets for variable → default attribution
+When the goal is tracking *how specific quantitative variables move default*
+(not just a binary label), prefer recent sets with named, interpretable fields:
+
+| Dataset | Recency | Named variables? | Time-series? | Best for |
+| --- | --- | --- | --- | --- |
+| **Freddie Mac / Fannie Mae single-family** | current (quarterly to present) | ✅ FICO, LTV, DTI, rate, UPB, loan age, delinquency | ✅ monthly | Transparent variable→default attribution on current data |
+| **Amex Default Prediction** (2022) | recent | ⚠️ masked, grouped (D_/S_/P_/B_/R_) | ✅ monthly per customer | Newest match for the *spectral* method; category-level impact only |
+| **Lending Club** (through 2018Q4) | mid | ✅ income, DTI, FICO, revolving util, grade | ❌ | Rich interpretable tabular attribution |
+| **UCI "Default of Credit Card Clients"** | mid | ✅ limit, age, 6-mo bill/pay history | ⚠️ 6 months | Clean, small, fully interpretable |
+
+Links: Freddie Mac https://www.freddiemac.com/research/datasets (free registration) ·
+Amex https://www.kaggle.com/competitions/amex-default-prediction ·
+Lending Club https://www.kaggle.com/datasets/wordsforthewise/lending-club ·
+UCI https://archive.ics.uci.edu/dataset/350/default+of+credit+card+clients
+
+Caveat: Freddie/Amex give the freshest data but neither is MCA; use for
+attribution methodology + pretraining, validate on internal Tier-1 deals.
+
+## Measuring variable impact (built in)
+`variable_impact.py` runs automatically inside the harness and writes
+`variable_impact.json`: per-variable **Information Value (IV)**, **default rate
+per quantile bin**, and **point-biserial correlation** + the champion logistic's
+signed weights. Works on any ingested dataset, so you can rank which quantitative
+variables drive default and in which direction.
+
 ## One ingestion path for all of them
 `ingest_dataset.py` maps any `transactions.csv` + `labels.csv` (configurable
 column names) into `export.json`, so Berka, an SBA-style table, or a PTM export

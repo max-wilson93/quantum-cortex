@@ -37,6 +37,7 @@ from quantum_cortex import QuantumCortex  # noqa: E402
 from preprocessing import InsufficientLedgerError, ledger_to_spectral_image  # noqa: E402
 from baseline import LogisticBaseline, cfr_features  # noqa: E402
 import calibration as cal  # noqa: E402
+import variable_impact as vi  # noqa: E402
 
 MODEL_VERSION = "qc-uw-0.1"
 NUM_INPUTS = 3136
@@ -128,7 +129,16 @@ def main():
         > metrics["champion_cfr_logistic"]["auc"]
     )
 
+    # Variable-impact attribution over all matured deals (how each quantitative
+    # variable moves the default rate) + the champion's signed logistic weights.
+    impact = vi.compute_impact(train + test)
+    impact["champion_logistic_weights"] = dict(
+        zip(["cfr", "positions", "tib_x1e-3"], [round(float(w), 4) for w in base.w])
+    )
+    metrics["variable_impact"] = impact
+
     os.makedirs(args.out, exist_ok=True)
+    json.dump(impact, open(os.path.join(args.out, "variable_impact.json"), "w"), indent=2)
     np.savez(os.path.join(args.out, "weights.npz"), W_in=cortex.W_in, W_lat=cortex.W_lat)
     json.dump(
         {"model_version": MODEL_VERSION, "num_classes": NUM_CLASSES,
@@ -136,9 +146,11 @@ def main():
         open(os.path.join(args.out, "calibration.json"), "w"), indent=2,
     )
     json.dump(metrics, open(os.path.join(args.out, "metrics.json"), "w"), indent=2)
-    print(json.dumps(metrics, indent=2))
-    print(f"\nArtifact written to {args.out}/ (weights.npz, calibration.json, metrics.json)")
-    print("Promote challenger:" , metrics["promote_challenger"])
+    print(json.dumps({k: v for k, v in metrics.items() if k != "variable_impact"}, indent=2))
+    vi.print_impact(impact)
+    print(f"\nArtifact written to {args.out}/ "
+          "(weights.npz, calibration.json, metrics.json, variable_impact.json)")
+    print("Promote challenger:", metrics["promote_challenger"])
 
 
 def _eval(pd: np.ndarray, y: np.ndarray) -> dict:
