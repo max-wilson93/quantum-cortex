@@ -36,7 +36,6 @@ from fourier_optics import FourierOptics  # noqa: E402
 from quantum_cortex import QuantumCortex  # noqa: E402
 from preprocessing import InsufficientLedgerError, ledger_to_spectral_image  # noqa: E402
 from baseline import LogisticBaseline, feature_matrix  # noqa: E402
-from baseline import record_features as record_feats  # noqa: E402
 import calibration as cal  # noqa: E402
 import variable_impact as vi  # noqa: E402
 
@@ -48,8 +47,11 @@ EPOCHS = 3
 
 
 def build_image(rec: dict, optics: FourierOptics) -> np.ndarray | None:
+    ledger = rec.get("ledger")
+    if not ledger:  # tabular-only dataset (no time-series) -> no spectral image
+        return None
     try:
-        img = ledger_to_spectral_image(rec["ledger"])
+        img = ledger_to_spectral_image(ledger)
     except InsufficientLedgerError:
         return None
     return optics.apply(img)
@@ -94,45 +96,49 @@ def main():
         raise SystemExit("need matured deals in both train and holdout windows")
     print(f"matured: {len(train)} train / {len(test)} holdout (origination-date split)")
 
-    optics = FourierOptics(shape=(28, 28))
-    feats_tr = {i: build_image(r, optics) for i, r in enumerate(train)}
-    feats_te = {i: build_image(r, optics) for i, r in enumerate(test)}
-
-    # --- Challenger: QuantumCortex spectral PD ---
-    cortex = train_cortex(train, feats_tr)
-    # Calibrate on the train cohort's raw risk -> PD (Platt).
-    tr_idx = [i for i in feats_tr if feats_tr[i] is not None]
-    tr_risk = np.array([cortex_risk(cortex, feats_tr[i]) for i in tr_idx])
-    tr_y = np.array([int(train[i]["defaulted"]) for i in tr_idx])
-    a, b = cal.fit_platt(tr_risk, tr_y)
-
-    te_idx = [i for i in feats_te if feats_te[i] is not None]
-    te_y = np.array([int(test[i]["defaulted"]) for i in te_idx])
-    ch_risk = np.array([cortex_risk(cortex, feats_te[i]) for i in te_idx])
-    ch_pd = cal.apply_platt(ch_risk, a, b)
-
-    # --- Champion: logistic over the dataset's named variables ---
-    feat_names, _ = feature_matrix([train[i] for i in tr_idx[:1]])
-    Xtr = np.array([[record_feats(train[i]).get(n, 0.0) for n in feat_names] for i in tr_idx])
-    base = LogisticBaseline().fit(Xtr, tr_y.astype(float))
-    Xte = np.array([[record_feats(test[i]).get(n, 0.0) for n in feat_names] for i in te_idx])
+    # --- Champion + attribution: ALL matured rows (no time-series required) so
+    #     tabular-rich datasets (e.g. Lending Club) are used to the fullest. ---
+    feat_names, Xtr = feature_matrix(train)
+    _, Xte = feature_matrix(test)
+    tr_y = np.array([int(r["defaulted"]) for r in train], dtype=float)
+    te_y = np.array([int(r["defaulted"]) for r in test], dtype=float)
+    base = LogisticBaseline().fit(Xtr, tr_y)
     cp_pd = base.predict_pd(Xte)
 
     metrics = {
         "model_version": MODEL_VERSION,
         "generated_at": datetime.utcnow().isoformat() + "Z",
-        "n_train": int(len(tr_idx)), "n_holdout": int(len(te_idx)),
+        "n_train": len(train), "n_holdout": len(test),
         "holdout_default_rate": float(te_y.mean()),
-        "champion_cfr_logistic": _eval(cp_pd, te_y),
-        "challenger_quantum_spectral": _eval(ch_pd, te_y),
+        "champion_logistic": _eval(cp_pd, te_y),
     }
-    metrics["promote_challenger"] = bool(
-        metrics["challenger_quantum_spectral"]["auc"]
-        > metrics["champion_cfr_logistic"]["auc"]
-    )
 
-    # Variable-impact attribution over all matured deals (how each quantitative
-    # variable moves the default rate) + the champion's signed logistic weights.
+    # --- Challenger: spectral PD, ONLY over rows that have a usable ledger. ---
+    optics = FourierOptics(shape=(28, 28))
+    feats_tr = {i: build_image(r, optics) for i, r in enumerate(train)}
+    feats_te = {i: build_image(r, optics) for i, r in enumerate(test)}
+    tr_idx = [i for i in feats_tr if feats_tr[i] is not None]
+    te_idx = [i for i in feats_te if feats_te[i] is not None]
+
+    cortex, a, b = None, 1.0, 0.0
+    if len(tr_idx) >= 30 and len(te_idx) >= 10:
+        cortex = train_cortex(train, feats_tr)
+        tr_risk = np.array([cortex_risk(cortex, feats_tr[i]) for i in tr_idx])
+        a, b = cal.fit_platt(tr_risk, np.array([int(train[i]["defaulted"]) for i in tr_idx]))
+        cte_y = np.array([int(test[i]["defaulted"]) for i in te_idx])
+        ch_pd = cal.apply_platt(np.array([cortex_risk(cortex, feats_te[i]) for i in te_idx]), a, b)
+        metrics["n_holdout_timeseries"] = len(te_idx)
+        metrics["challenger_quantum_spectral"] = _eval(ch_pd, cte_y)
+        metrics["promote_challenger"] = bool(
+            metrics["challenger_quantum_spectral"]["auc"] > metrics["champion_logistic"]["auc"]
+        )
+    else:
+        metrics["challenger_quantum_spectral"] = None  # tabular-only dataset
+        metrics["promote_challenger"] = False
+        print("No usable time-series in this dataset -> spectral challenger skipped "
+              "(tabular-only). Champion + variable impact still produced.")
+
+    # Variable-impact attribution over all matured rows + champion's signed weights.
     impact = vi.compute_impact(train + test)
     impact["champion_logistic_weights"] = {
         n: round(float(w), 4) for n, w in zip(feat_names, base.w)
@@ -141,17 +147,20 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
     json.dump(impact, open(os.path.join(args.out, "variable_impact.json"), "w"), indent=2)
-    np.savez(os.path.join(args.out, "weights.npz"), W_in=cortex.W_in, W_lat=cortex.W_lat)
-    json.dump(
-        {"model_version": MODEL_VERSION, "num_classes": NUM_CLASSES,
-         "platt": {"a": a, "b": b}},
-        open(os.path.join(args.out, "calibration.json"), "w"), indent=2,
-    )
+    if cortex is not None:  # only a time-series dataset yields a servable artifact
+        np.savez(os.path.join(args.out, "weights.npz"), W_in=cortex.W_in, W_lat=cortex.W_lat)
+        json.dump(
+            {"model_version": MODEL_VERSION, "num_classes": NUM_CLASSES,
+             "platt": {"a": a, "b": b}},
+            open(os.path.join(args.out, "calibration.json"), "w"), indent=2,
+        )
     json.dump(metrics, open(os.path.join(args.out, "metrics.json"), "w"), indent=2)
     print(json.dumps({k: v for k, v in metrics.items() if k != "variable_impact"}, indent=2))
     vi.print_impact(impact)
-    print(f"\nArtifact written to {args.out}/ "
-          "(weights.npz, calibration.json, metrics.json, variable_impact.json)")
+    artifacts = "metrics.json, variable_impact.json" + (
+        ", weights.npz, calibration.json" if cortex is not None else ""
+    )
+    print(f"\nArtifact written to {args.out}/ ({artifacts})")
     print("Promote challenger:", metrics["promote_challenger"])
 
 

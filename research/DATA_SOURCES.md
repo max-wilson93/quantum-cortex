@@ -24,6 +24,26 @@ Caveat: mortgages, not MCA — this validates the *method* and the variable-impa
 tooling on real, current data. Swap in your internal `deal_outcomes` export
 (Tier 1) the moment labels accrue.
 
+## Enrich attribution with Lending Club (tabular, no registration friction)
+Lending Club has the richest *interpretable* variables (income, DTI, FICO,
+utilization, inquiries, delinquencies, ...) but no per-loan series — so it powers
+the **champion + variable-impact**, and the harness auto-skips the spectral
+challenger (tabular-only).
+```bash
+# Kaggle: wordsforthewise/lending-club -> accepted_2007_to_2018Q4.csv.gz
+python research/lendingclub_to_export.py --input accepted_2007_to_2018Q4.csv.gz \
+  --out export_lc.json --sample 40000
+python research/train_calibrate_backtest.py --data export_lc.json --out artifacts_lc/
+```
+Use it to cross-check which variables drive default against Freddie + your
+internal deals (16 variables incl. engineered installment-to-income).
+
+### How the harness uses each dataset
+- **Time-series datasets** (Freddie, internal ledgers) → train + score the
+  spectral challenger AND champion + attribution; produce a servable artifact.
+- **Tabular-only datasets** (Lending Club, SBA) → champion + attribution only;
+  no `weights.npz` (nothing for the spectral bridge to serve).
+
 ---
 
 
