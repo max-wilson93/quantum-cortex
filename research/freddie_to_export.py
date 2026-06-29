@@ -27,7 +27,8 @@ import json
 
 # --- Standard layout column indices (0-based) ---
 # origination
-O_FICO, O_FIRST_PMT, O_CLTV, O_DTI, O_UPB, O_LTV, O_RATE, O_LOANSEQ = 0, 1, 8, 9, 10, 11, 12, 19
+O_FICO, O_FIRST_PMT, O_CLTV, O_DTI, O_UPB, O_LTV, O_RATE, O_LOANSEQ, O_TERM = (
+    0, 1, 8, 9, 10, 11, 12, 19, 21)
 # performance
 P_LOANSEQ, P_PERIOD, P_UPB, P_DELQ, P_AGE, P_ZBC = 0, 1, 2, 3, 4, 8
 
@@ -71,12 +72,15 @@ def load_origination(path: str, sample: int | None) -> dict[str, dict]:
             seq = c[O_LOANSEQ].strip()
             out[seq] = {
                 "features": {
+                    # Harmonized names (fico/dti/int_rate/loan_amount/term) pool
+                    # across datasets; ltv/cltv are Freddie-specific.
                     "fico": _f(c[O_FICO], hi=9999),
-                    "orig_ltv": _f(c[O_LTV], hi=999),
-                    "orig_cltv": _f(c[O_CLTV], hi=999),
-                    "orig_dti": _f(c[O_DTI], hi=999),
-                    "orig_interest_rate": _f(c[O_RATE]),
-                    "orig_upb": _f(c[O_UPB]),
+                    "ltv": _f(c[O_LTV], hi=999),
+                    "cltv": _f(c[O_CLTV], hi=999),
+                    "dti": _f(c[O_DTI], hi=999),
+                    "int_rate": _f(c[O_RATE]),
+                    "loan_amount": _f(c[O_UPB]),
+                    "term": _f(c[O_TERM]) if len(c) > O_TERM else 0.0,
                 },
                 "funded_at": _period_to_date(c[O_FIRST_PMT]),
                 "orig_upb": _f(c[O_UPB]),

@@ -38,6 +38,31 @@ python research/train_calibrate_backtest.py --data export_lc.json --out artifact
 Use it to cross-check which variables drive default against Freddie + your
 internal deals (16 variables incl. engineered installment-to-income).
 
+## SBA 7(a) — small business, closest population to MCA (tabular)
+Small-business loans with a charge-off label — the borrower population nearest to
+MCA merchants. Tabular (champion + attribution only).
+```bash
+# data.sba.gov/dataset/7-a-504-foia  OR Kaggle larsen0966/sba-loans-case-data-set
+python research/sba_to_export.py --input SBAnational.csv --out export_sba.json --sample 50000
+python research/train_calibrate_backtest.py --data export_sba.json --out artifacts_sba/
+```
+Variables: loan_amount, term, sba_guarantee_ratio, num_employees, created/retained
+jobs, new_business, urban, real_estate_backed.
+
+## Pool everything: cross-dataset attribution
+Variables named consistently across converters (`fico`, `dti`, `int_rate`,
+`loan_amount`, `term`) pool across datasets. `pool_impact.py` reports each
+variable's effect per dataset AND pooled, and flags whether the *direction* is
+consistent — a variable that moves default the same way across mortgage, consumer,
+and small-business books is a robust signal to trust in the MCA model.
+```bash
+python research/pool_impact.py \
+  --data export_freddie.json export_lc.json export_sba.json \
+  --names freddie lending_club sba --out pooled_impact.json
+```
+Example (real data): FICO consistently protective and DTI consistently
+risk-increasing across books → trust them; a variable with mixed signs → don't.
+
 ### How the harness uses each dataset
 - **Time-series datasets** (Freddie, internal ledgers) → train + score the
   spectral challenger AND champion + attribution; produce a servable artifact.

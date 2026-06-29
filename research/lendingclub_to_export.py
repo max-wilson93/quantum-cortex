@@ -88,6 +88,7 @@ def main():
             fico = (_f(row.get("fico_range_low")) + _f(row.get("fico_range_high"))) / 2
             inc = _f(row.get("annual_inc"))
             installment = _f(row.get("installment"))
+            term = _f("".join(ch for ch in (row.get("term") or "") if ch.isdigit()))
             out.append({
                 "interested_party_id": row.get("id") or f"lc-{len(out)}",
                 "funded_at": issue,
@@ -100,7 +101,8 @@ def main():
                     "int_rate": _f(row.get("int_rate")),
                     "revol_util": _f(row.get("revol_util")),
                     "revol_bal": _f(row.get("revol_bal")),
-                    "loan_amnt": _f(row.get("loan_amnt")),
+                    "loan_amount": _f(row.get("loan_amnt")),  # harmonized name (pools)
+                    "term": term,  # " 36 months" -> 36
                     "installment": installment,
                     "open_acc": _f(row.get("open_acc")),
                     "total_acc": _f(row.get("total_acc")),
