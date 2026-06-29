@@ -1,5 +1,15 @@
 # Training data for the underwriting model
 
+## One command (after you've downloaded any subset of the files)
+```bash
+FREDDIE_ORIG=historical_data_2018Q1.txt FREDDIE_PERF=historical_data_time_2018Q1.txt \
+LC_INPUT=accepted_2007_to_2018Q4.csv.gz SBA_INPUT=SBAnational.csv \
+bash research/run_all.sh        # convert -> train each -> pooled attribution
+```
+Any subset works (missing datasets are skipped). Outputs land in `artifacts/`:
+per-dataset `metrics.json` + `variable_impact.json` (+ `weights.npz` for Freddie),
+and `pooled_impact.json` when >=2 datasets are present.
+
 ## Train today (Freddie Mac — fastest real run)
 Each loan has a long monthly series (for the spectral model) + named variables
 (for attribution). Steps:
