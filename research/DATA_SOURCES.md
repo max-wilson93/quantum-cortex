@@ -4,8 +4,10 @@
 ```bash
 FREDDIE_ORIG=historical_data_2018Q1.txt FREDDIE_PERF=historical_data_time_2018Q1.txt \
 LC_INPUT=accepted_2007_to_2018Q4.csv.gz SBA_INPUT=SBAnational.csv \
+PAYSIM_INPUT=paysim.csv \
 bash research/run_all.sh        # convert -> train each -> pooled attribution
 ```
+`PAYSIM_INPUT` is optional and trained SEPARATELY (fraud proxy — see below).
 Any subset works (missing datasets are skipped). Outputs land in `artifacts/`:
 per-dataset `metrics.json` + `variable_impact.json` (+ `weights.npz` for Freddie),
 and `pooled_impact.json` when >=2 datasets are present.
@@ -58,6 +60,20 @@ python research/train_calibrate_backtest.py --data export_sba.json --out artifac
 ```
 Variables: loan_amount, term, sba_guarantee_ratio, num_employees, created/retained
 jobs, new_business, urban, real_estate_backed.
+
+## PaySim — spectral-pipeline validation only (fraud, NOT default)
+PaySim is a synthetic transaction stream labeled `isFraud`. It has a real
+per-account time-series, so it exercises the Lomb-Scargle -> cortex spectral path
+at scale — but it trains a FRAUD proxy, not credit default. Use it to confirm the
+spectral pipeline learns from transaction dynamics; never pool it with the default
+datasets and never price MCA deals off it.
+```bash
+python research/paysim_to_export.py --input paysim.csv --out export_paysim.json \
+  --min-txns 16 --max-rows 3000000
+python research/train_calibrate_backtest.py --data export_paysim.json --out artifacts_paysim/
+```
+Caveat: per-account histories are short, so only a fraction of accounts reach the
+~16 distinct-day minimum — expect modest usable samples from millions of rows.
 
 ## Pool everything: cross-dataset attribution
 Variables named consistently across converters (`fico`, `dti`, `int_rate`,

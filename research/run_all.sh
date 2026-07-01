@@ -61,7 +61,18 @@ else
   echo "-- skip sba (set SBA_INPUT to an existing file)"
 fi
 
-# --- Pooled cross-dataset attribution (needs >= 2 datasets) ---
+# --- PaySim (fraud proxy, SEPARATE: validates the spectral pipeline; NOT pooled) ---
+if [[ -n "${PAYSIM_INPUT:-}" && -f "${PAYSIM_INPUT}" ]]; then
+  echo ">>> convert: paysim (fraud proxy — spectral validation only, not pooled)"
+  "$PY" research/paysim_to_export.py --input "$PAYSIM_INPUT" \
+    --out "$OUT/export_paysim.json" --min-txns 16 --max-rows "${PAYSIM_MAX_ROWS:-3000000}" \
+    && "$PY" research/train_calibrate_backtest.py --data "$OUT/export_paysim.json" \
+         --out "$OUT/paysim"   # deliberately NOT added to the pool arrays
+else
+  echo "-- skip paysim (set PAYSIM_INPUT to an existing file)"
+fi
+
+# --- Pooled cross-dataset attribution (needs >= 2 DEFAULT datasets) ---
 if (( ${#exports[@]} >= 2 )); then
   echo ">>> pool: ${names[*]}"
   "$PY" research/pool_impact.py --data "${exports[@]}" --names "${names[@]}" \
