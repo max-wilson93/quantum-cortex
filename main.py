@@ -132,14 +132,15 @@ def run(args: argparse.Namespace) -> tuple[float, float]:
     print(f"\n=== PHASE 2: VALIDATION ({test_samples} samples) ===")
     print("Plasticity OFF. Testing generalization...")
     test_correct = 0
-    low_margin = 0
+    margins = np.empty(test_samples)
+    hits = np.empty(test_samples, dtype=bool)
     for i in range(test_samples):
         features = optics.apply(test_images[i].reshape(28, 28))
         prediction = model.predict(features)
-        if prediction.label == test_labels[i]:
+        hits[i] = prediction.label == test_labels[i]
+        margins[i] = prediction.margin
+        if hits[i]:
             test_correct += 1
-        if not prediction.confident(min_margin=0.05):
-            low_margin += 1
         if (i + 1) % 1000 == 0:
             print(f"Test {i + 1} | Current test acc: {test_correct / (i + 1) * 100:.2f}%")
     test_acc = test_correct / test_samples * 100
@@ -149,8 +150,19 @@ def run(args: argparse.Namespace) -> tuple[float, float]:
     print(f"Training accuracy: {train_acc:.2f}%")
     print(f"Test accuracy:     {test_acc:.2f}%")
     print(f"Generalization gap: {test_acc - train_acc:+.2f} points")
-    print(f"Low-margin (<0.05) predictions: {low_margin}/{test_samples}")
     print(f"Duration: {duration:.1f}s")
+
+    # Reported by quantile rather than against a fixed threshold, because the
+    # margin's *scale* moves with how much the cortex has been trained -- more
+    # samples means more weights near the clip bound, more neurons driven, and
+    # energy spread thinner. Its *ordering* holds throughout, so an abstention
+    # rule belongs on a quantile of a holdout, never on a constant.
+    print("\n--- confidence ---")
+    print(f"margin: median {np.median(margins):.5f}  max {margins.max():.5f}")
+    cut = np.quantile(margins, 0.1)
+    weakest, strongest = margins <= cut, margins >= np.quantile(margins, 0.9)
+    print(f"accuracy in the least confident 10%: {hits[weakest].mean() * 100:.2f}%")
+    print(f"accuracy in the most confident 10%:  {hits[strongest].mean() * 100:.2f}%")
 
     if not args.no_log:
         notes = "quick" if args.quick else "full"

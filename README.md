@@ -1,7 +1,7 @@
 # The Quantum-Holographic Cortex
 ### A Bio-Physical Spiking Neural Network for One-Shot Learning
 
-**Status:** Validated (90.74% Test Accuracy on MNIST)  
+**Status:** Validated (90.57% Test Accuracy on MNIST, single column, seed 42)  
 **Paradigm:** Online, One-Shot, Non-Backpropagation  
 **Core Physics:** Fourier Optics, Kerr Non-Linearity, Unitary Evolution  
 
@@ -132,6 +132,33 @@ The route that does survive the phase rule is different *data* per member —
 `Ensemble(members, bag_fraction=0.5)` — because training histories that differ
 cannot be annealed back together. Verify the gain on your own data before paying
 three times the compute for it.
+
+### 3a. Knowing when it does not know
+
+A model that cannot abstain cannot be trusted with a decision that has a cost.
+The readout therefore returns the whole class-energy vector, and the **margin** —
+the gap between the winning class and the runner-up as a share of total energy.
+
+The margin ranks correctness strongly. On 2000 held-out MNIST samples, accuracy
+by margin decile:
+
+| Decile | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Accuracy | 51.0% | 68.0% | 84.5% | 90.5% | 96.0% | 97.0% | 98.5% | 99.5% | 98.0% | 99.5% |
+
+Monotone across nine of ten steps, AUC 0.864 against correctness. Dropping the
+least confident tenth of predictions takes accuracy from 88.25% to roughly 92%.
+
+**The scale is not stable, only the ordering is.** The same physics has a median
+margin of 0.107 at 6,000 training samples and below 0.05 at 60,000 — more
+training drives more weights to the clip bound, which spreads energy thinner.
+So an abstention threshold must be taken as a *quantile of a holdout* and stored
+with the model. A hardcoded constant tuned on one model silently abstains on
+everything under the next.
+
+For the same reason `Prediction.distribution` is called normalised energy and
+not a probability. It has never been calibrated against observed frequencies,
+and mapping it to one is a separate, evidenced step.
 
 ## 4. Comparative Analysis & Market Significance
 This architecture solves specific bottlenecks inherent in Deep Learning (CNNs) and Standard Neuromorphic Computing (SNNs).

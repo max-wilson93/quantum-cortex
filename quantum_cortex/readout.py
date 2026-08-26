@@ -81,9 +81,21 @@ class Prediction:
     def confident(self, *, min_margin: float) -> bool:
         """Whether the margin clears ``min_margin``.
 
-        Kept as a method taking an explicit threshold rather than a property
-        with a default, because the right threshold is a property of the
-        decision being made and there is no defensible universal value.
+        **Set the threshold from a quantile of a holdout, never as a constant.**
+        The margin's ordering is a strong signal -- measured on MNIST, accuracy
+        rises monotonically from 51% in the lowest margin decile to 99.5% in the
+        highest, an AUC of 0.86 against correctness. Its *scale* is not stable:
+        the same physics trained on 6,000 samples has a median margin of 0.107,
+        and on 60,000 the median falls below 0.05, because more training drives
+        more weights toward the clip bound and spreads the energy thinner.
+
+        So a threshold that abstains sensibly for one model silently abstains on
+        everything for the next. Take the quantile you want on held-out data and
+        store it beside the model, which is also what makes the abstention rate
+        auditable rather than incidental.
+
+        A method taking an explicit threshold rather than a property with a
+        default, for the same reason: there is no defensible universal value.
         """
         return self.margin >= min_margin
 
