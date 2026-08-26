@@ -86,16 +86,52 @@ To prevent "Runaway Resonance" (Seizures) inherent in recurrent networks, we imp
 * **The Biology:** Simulates Astrocytes regulating the global energy budget (ATP/Potassium) of the cortical column.
 * **The Math:** The total energy of the system is clamped to a constant ($||\Psi|| = C$) at every time step. This forces neurons to compete for energy, preserving contrast without clipping signals.
 
-## 3. The Architecture: "The Quantum Trinity"
-To eliminate phase noise and solve the stability-plasticity dilemma, the final model uses a Homogeneous Ensemble of three independent cortical columns.
+## 3. The Architecture: "The Quantum Trinity" — and what measuring it showed
 
-* **Mechanism:** Three identical Quantum Cortices are initialized with random phase distributions ($\theta \sim U[0, 2\pi]$).
-* **Process:** They process the same input stream independently, developing unique interference patterns (Holograms) due to their differing initial states.
-* **Quantum Error Correction:** The outputs are aggregated via Constructive Interference (Voting).
-    * If the signal is "Real" (Topological), all three brains resonate in sync.
-    * If the signal is "Noise" (Random), the brains drift out of phase and cancel each other out.
+The design calls for a homogeneous ensemble of three independent cortical
+columns, aggregated by constructive interference: three cortices initialised
+with random phase distributions ($\theta \sim U[0, 2\pi]$) develop distinct
+interference patterns, so a real topological signal makes all three resonate in
+sync while noise leaves them out of phase and cancels.
 
-This statistical holography allows the system to achieve >90% accuracy without requiring backpropagation or heterogeneous parameter tuning.
+**That is the design. It is not what the code did, and when the gap was closed
+the ensemble still did not earn its compute.** Both halves of that are worth
+stating plainly, because the 90.74% headline was attributed to this mechanism
+and does not come from it.
+
+Measured on 6000 train / 2000 test — reproduce with
+`python benchmarks/ensemble_diversity.py`:
+
+| Configuration | Best single | Ensemble | Disagreements |
+| :--- | ---: | ---: | ---: |
+| Identical init (as shipped) | 88.25% | 88.25% | 0 / 2000 |
+| Random phase init (as described above) | 88.05% | 88.20% | 14 / 2000 |
+| Three radial bands, one per column | 58.90% | 57.00% | 1569 / 2000 |
+
+Two separate problems:
+
+* **There was no diversity to aggregate.** `QuantumCortex.__init__` contained no
+  randomness at all — every column was seeded with magnitude 0.05 and phase 0 —
+  so the "three independent columns" were one model three times. Across 2000
+  held-out samples they never once disagreed.
+* **Adding diversity at initialisation does not survive training.** The
+  phase-Hebbian rule rotates every active weight's phase *toward zero*. Whatever
+  phases a column starts from, the rule walks it into the same attractor as
+  every other column. Implementing the random initialisation as described bought
+  14 disagreements out of 2000 and no measurable accuracy.
+
+Splitting the spectrum across columns produces genuine diversity and columns too
+weak for it — the ensemble scores below its own best member.
+
+**What actually carries the result is the encoder**: the concatenated
+four-orientation Fourier front end of §2A. That is where the architecture's
+contribution lives, and it is why `quantum_cortex.encoders` is the extension
+point while `Ensemble` is opt-in and documents what it is and is not worth.
+
+The route that does survive the phase rule is different *data* per member —
+`Ensemble(members, bag_fraction=0.5)` — because training histories that differ
+cannot be annealed back together. Verify the gain on your own data before paying
+three times the compute for it.
 
 ## 4. Comparative Analysis & Market Significance
 This architecture solves specific bottlenecks inherent in Deep Learning (CNNs) and Standard Neuromorphic Computing (SNNs).
@@ -126,34 +162,74 @@ This architecture solves specific bottlenecks inherent in Deep Learning (CNNs) a
 
 ## 5. Installation & Usage
 
-### Requirements
-* Python 3.10+
-* NumPy
+Python 3.11+. NumPy is the only dependency — the whole algorithm is FFTs, phase
+rotation and interference, so there is no matrix-multiply backend to depend on.
 
-### Running the Model
-Clone the repository:
 ```bash
-git clone [https://github.com/yourusername/quantum-cortex.git](https://github.com/yourusername/quantum-cortex.git)
-cd quantum-cortex
+pip install -e ".[dev]"
 ```
 
+### Using it
 
-### Run the Grand Benchmark
-```bash
-python main.py
+```python
+import numpy as np
+from quantum_cortex import QuantumCortex, FourierOptics
+
+optics = FourierOptics(shape=(28, 28))
+cortex = QuantumCortex(optics.n_features, num_classes=10, seed=42)
+
+prediction = cortex.observe(optics.apply(image), label)   # learn, online
+prediction = cortex.predict(optics.apply(image))          # score only
+
+prediction.label          # the winning class
+prediction.distribution   # normalised energy — NOT a calibrated probability
+prediction.margin         # winner minus runner-up: threshold this to abstain
+prediction.ranked()       # every class, best first
+
+cortex.save("cortex.npz")                 # online learning needs to persist
+cortex = QuantumCortex.load("cortex.npz") # and picks up where it left off
 ```
-This will initialize the "trinity" ensemble, train on 60,000 samples, and validate on 10,000 samples.
+
+For continuous features — anything financial — the default binary input gate is
+wrong: it maps 0.71 and 6.0 to the same `1+0j`. Use `TabularEncoder` (quantile
+ranks, `NaN` stays missing rather than becoming zero) with
+`PhasicEncoding.GATED_PHASE`. For a time series, `SpectralSeries` detrends and
+splits into frequency bands.
+
+### Running the benchmark
+
+```bash
+python main.py                  # the published run: 60k train, 10k test
+python main.py --quick          # 6k/2k, ~30s, for a smoke test
+python main.py --ensemble       # three columns rather than one
+make test                       # unit tests, ruff, mypy --strict
+```
+
+`main.py` is the regression guard: run it after touching the physics or the
+learning rule. Everything is seeded, so two runs with the same seed produce
+identical numbers.
 
 ## 6. Modifying Physics
-The system parameters have been optimized through Monte Carlo simulation and statistical analysis to find the "digital resonance" regime. You can tune them in `main.py`:
+Parameters were found by Monte Carlo search for the "digital resonance" regime.
+They live in `quantum_cortex.GOLDEN_CONFIG` and can be overridden per cortex:
 
-```bash
-physics_config = {
-    'learning_rate':    0.09,  # High Plasticity (Flashbulb Memory)
-    'phase_flexibility': 0.10, # Stiff Rotation (Stability)
-    'lateral_strength':  0.16, # Moderate Binding (Coherence)
-    'input_threshold':   0.70, # Strict Digital Gating (Noise Removal)
-    'kerr_constant':     0.20, # Low Non-Linearity
-    'system_energy':     40.0  # High Gain (Amplification)
+```python
+QuantumCortex(n_inputs, num_classes, config={"kerr_constant": 0.3})
+```
+
+```python
+GOLDEN_CONFIG = {
+    "learning_rate":     0.09,  # High plasticity (flashbulb memory)
+    "phase_flexibility": 0.10,  # Stiff rotation (stability)
+    "lateral_strength":  0.10,  # Moderate binding (coherence)
+    "input_threshold":   0.70,  # Strict digital gating (noise removal)
+    "kerr_constant":     0.20,  # Low non-linearity
+    "system_energy":     40.0,  # High gain (amplification)
 }
 ```
+
+One correction worth flagging: earlier versions of this table recorded
+`lateral_strength: 0.16`, but the parameter was read from the config and never
+used — `W_lat` was seeded with a hardcoded `0.1`. **The published 90.74% run
+therefore had an effective lateral strength of 0.1**, which is what is recorded
+above so the result reproduces. The knob now reaches the weights.

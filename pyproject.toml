@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quantum-cortex"
+version = "0.2.0"
+description = "Complex-valued wave-interference network for online, one-shot learning"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+# numpy and nothing else. That is not an accident: the whole algorithm is FFTs,
+# phase rotation and interference, so there is no matrix-multiply backend to
+# depend on. It also means the underwriting engine can take this as an extra
+# without adding a single package it does not already have.
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+# The MNIST benchmark that serves as the regression guard. Separate because a
+# consumer importing the library has no use for the loader or the corpus.
+benchmark = []
+
+[tool.setuptools]
+packages = ["quantum_cortex"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Superseded research scripts, kept for the record. They are not on any import
+# path and are not held to the package's standards. `extend-exclude` rather
+# than `exclude`, which would drop ruff's own defaults and send it into .venv.
+extend-exclude = ["Depricated"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: benchmark runs measured in minutes, not seconds"]
