@@ -46,6 +46,7 @@ about what it does and does not buy.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -225,82 +226,213 @@ class QuantumCortex:
 
     # -- learning ----------------------------------------------------------
 
-    def observe(self, feature_vector: np.ndarray, label: int) -> Prediction:
+    def observe(
+        self, feature_vector: np.ndarray, label: int, *, weight: float = 1.0
+    ) -> Prediction:
         """Score one sample and learn from it. The online path.
 
         One presentation, one update, no replay. Returns what the cortex
         believed *before* the update, which is the only reading usable as an
         online accuracy estimate -- scoring after the update would be scoring
         the answer against a model that had already been told it.
+
+        ``weight`` scales this sample's plasticity. The default of 1.0 leaves
+        the learning rule exactly as validated. Below 1.0 the sample moves the
+        weights less, which is how a partially-observed outcome earns
+        proportionally less influence -- a funded deal watched for 20 days of a
+        90-day term is weaker evidence than one watched to maturity, and
+        letting it push as hard is how a model of a growing book comes out
+        optimistic.
+
+        Exclusive classes only. When a sample can carry several independent
+        labels at once -- one merchant file drawing offers from three lenders
+        and declines from two -- use :meth:`observe_multi`.
         """
         if not 0 <= label < self.num_classes:
             raise ValueError(f"label {label} outside [0, {self.num_classes})")
 
+        input_wave, prediction = self._forward(feature_vector)
+
+        # Single-label damping targets whichever class won wrongly, which is
+        # the rule the published result was measured with.
+        negatives = () if prediction.label == label else (prediction.label,)
+        self._learn(input_wave, (label,), negatives, weight=weight)
+
+        self._class_counts[label] += 1
+        self.samples_seen += 1
+        return prediction
+
+    def observe_multi(
+        self,
+        feature_vector: np.ndarray,
+        positives: Iterable[int],
+        negatives: Iterable[int] = (),
+        *,
+        weight: float = 1.0,
+    ) -> Prediction:
+        """Learn from a sample carrying several independent outcomes at once.
+
+        The shape lender acceptance actually has: one merchant file is shopped
+        to a handful of lenders and each answers for itself. Three offers and
+        two declines is five observations about one file, not one label.
+
+        **A class in neither set is unobserved, and is left alone.** That
+        distinction is the whole reason this method exists rather than a
+        positives-only signature. A lender the file was never submitted to has
+        not declined it; training it as a negative teaches the cortex that
+        every lender you did not approach says no, which is both false and
+        exactly the direction that makes a ranking useless -- it would learn
+        your submission habits rather than the lenders' credit boxes.
+
+        Sharing one input representation across every lender while keeping a
+        per-lender output block mirrors how the existing reduced-form model is
+        built, where the slope on expected loss is pooled across lenders and
+        only the intercept is fitted per lender. Thin per-lender data is the
+        reason there, and it is the reason here.
+
+        Args:
+            positives: Classes that fired for this sample -- lenders that made
+                an offer.
+            negatives: Classes observed *not* to fire -- lenders that declined.
+            weight: Plasticity scale for the whole sample, as in :meth:`observe`.
+        """
+        positive = tuple(dict.fromkeys(int(c) for c in positives))
+        negative = tuple(dict.fromkeys(int(c) for c in negatives))
+
+        for cls in (*positive, *negative):
+            if not 0 <= cls < self.num_classes:
+                raise ValueError(f"class {cls} outside [0, {self.num_classes})")
+        overlap = set(positive) & set(negative)
+        if overlap:
+            raise ValueError(
+                f"classes {sorted(overlap)} are both positive and negative for "
+                "one sample; an outcome cannot be an accept and a decline"
+            )
+        if not positive and not negative:
+            raise ValueError("observe_multi needs at least one observed outcome")
+
+        input_wave, prediction = self._forward(feature_vector)
+        self._learn(input_wave, positive, negative, weight=weight)
+
+        for cls in positive:
+            self._class_counts[cls] += 1
+        self.samples_seen += 1
+        return prediction
+
+    def _forward(self, feature_vector: np.ndarray) -> tuple[np.ndarray, Prediction]:
+        """One resonant pass. Returns the input wave and the reading."""
         input_wave = self.get_phasic_input(feature_vector)
         state = self.resonate(input_wave)
         energies = np.abs(state) ** 2
         pooled = energies.reshape(self.num_classes, self.neurons_per_class).sum(axis=1)
-        prediction = Prediction(
+        return input_wave, Prediction(
             label=int(np.argmax(pooled)),
             energies=pooled,
             total_energy=float(np.sum(energies)),
         )
 
-        self._learn(input_wave, label, prediction.label)
-        self._class_counts[label] += 1
-        self.samples_seen += 1
-        return prediction
+    def _gain_for(self, label: int, weight: float = 1.0) -> float:
+        """How hard this sample should push, for one class.
 
-    def _plasticity_for(self, label: int) -> float:
-        """This sample's effective learning rate.
+        Combines the sample weight with class balancing into a single
+        multiplier applied to *both* halves of the learning rule.
 
-        Without balancing this is just the current rate. With it, a class the
-        cortex has seen rarely gets proportionally more plasticity, so a book
-        that is 88% non-defaults does not simply learn to say "non-default".
-        The scaling is clipped because an unseen class would otherwise divide
-        by a count of zero and consume the whole column.
+        The sample weight is clipped to [0, 4]: a caller computing
+        ``observed_days / term_days`` on bad data should lose that sample's
+        influence, not the whole model. Class balancing is clipped for the
+        related reason that an unseen class would otherwise divide by a count
+        of zero and consume the whole column.
         """
+        scale = float(np.clip(weight, 0.0, 4.0))
         if not self.balance_classes or self.samples_seen == 0:
-            return self.learning_rate
+            return scale
         seen = self._class_counts[label]
         if seen == 0:
-            return self.learning_rate * 4.0
+            return 4.0 * scale
         mean = float(np.mean(self._class_counts[self._class_counts > 0]))
-        return self.learning_rate * float(np.clip(mean / seen, 0.25, 4.0))
+        return float(np.clip(mean / seen, 0.25, 4.0)) * scale
+
+    def _plasticity_for(self, label: int, weight: float = 1.0) -> float:
+        """This sample's effective learning rate -- the magnitude half.
+
+        Without balancing this is the current rate times the sample weight.
+        With it, a class the cortex has seen rarely gets proportionally more
+        plasticity, so a book that is 88% non-defaults does not simply learn to
+        say "non-default".
+        """
+        return self.learning_rate * self._gain_for(label, weight)
+
+    def _flexibility_for(self, label: int, weight: float = 1.0) -> float:
+        """This sample's effective phase flexibility -- the phase half.
+
+        Scaled by the same gain as the learning rate, and that pairing is
+        load-bearing rather than tidy. This is a *phase*-Hebbian rule: the
+        rotation toward zero phase is what brings a class's neurons into step
+        with an input, and it is arguably the more important half of learning
+        here. Scaling only the magnitude would leave a sample down-weighted for
+        partial observation still rotating the phases at full strength -- so a
+        deal watched 20 days of 90 would move the model almost as much as one
+        watched to maturity, which is the exact bias the weight exists to
+        prevent.
+        """
+        return self.phase_flexibility * self._gain_for(label, weight)
 
     def _columns_for(self, cls: int) -> np.ndarray:
         """The output-neuron columns belonging to one class."""
         start = cls * self.neurons_per_class
         return np.arange(start, start + self.neurons_per_class)
 
-    def _learn(self, input_wave: np.ndarray, label: int, predicted: int) -> None:
-        rate = self._plasticity_for(label)
+    def _learn(
+        self,
+        input_wave: np.ndarray,
+        positives: Sequence[int],
+        negatives: Sequence[int],
+        *,
+        weight: float = 1.0,
+    ) -> None:
+        """Apply the local Hebbian update for one presentation.
+
+        Classes in neither sequence are untouched -- that is what makes an
+        unobserved outcome different from a negative one.
+
+        Order matters: every positive is reinforced before any negative is
+        damped, so a class appearing as a positive here cannot have its own
+        growth eroded within the same update by a different class's damping
+        pass over the shared active inputs.
+        """
         active = np.flatnonzero(np.abs(input_wave) > 0.1)
 
         if active.size:
-            # 1. Feedforward phase-Hebbian: rotate the active weights toward
-            #    zero phase and grow them, so the target class's neurons come
-            #    into step with this input and resonate harder next time.
-            start = label * self.neurons_per_class
-            target = self._columns_for(label)
-            block = self.W_in[np.ix_(active, target)]
-            block = block * np.exp(-1j * self.phase_flexibility * np.angle(block))
-            self.W_in[np.ix_(active, target)] = block * (1.0 + rate)
+            for cls in positives:
+                rate = self._plasticity_for(cls, weight)
+                flex = self._flexibility_for(cls, weight)
 
-            # 2. Lateral Hebbian: bind the target class's neurons to each other
-            #    so they fire as one assembly.
-            stop = start + self.neurons_per_class
-            self.W_lat[start:stop, start:stop] *= 1.0 + rate
+                # 1. Feedforward phase-Hebbian: rotate the active weights
+                #    toward zero phase and grow them, so this class's neurons
+                #    come into step with this input and resonate harder next
+                #    time.
+                columns = self._columns_for(cls)
+                block = self.W_in[np.ix_(active, columns)]
+                block = block * np.exp(-1j * flex * np.angle(block))
+                self.W_in[np.ix_(active, columns)] = block * (1.0 + rate)
 
-            # 3. Damping, only on error: scatter the phases of whichever class
-            #    won wrongly and shrink its weights. Random scatter rather than
-            #    a directed correction is what keeps this a local rule -- there
-            #    is no gradient telling it which way to move.
-            if predicted != label:
-                columns = self._columns_for(predicted)
+                # 2. Lateral Hebbian: bind this class's neurons to each other
+                #    so they fire as one assembly.
+                start = cls * self.neurons_per_class
+                stop = start + self.neurons_per_class
+                self.W_lat[start:stop, start:stop] *= 1.0 + rate
+
+            # 3. Damping: scatter the phases of each observed negative and
+            #    shrink its weights. Random scatter rather than a directed
+            #    correction is what keeps this a local rule -- there is no
+            #    gradient telling it which way to move.
+            for cls in negatives:
+                rate = self._plasticity_for(cls, weight)
+                flex = self._flexibility_for(cls, weight)
+                columns = self._columns_for(cls)
                 block = self.W_in[np.ix_(active, columns)]
                 noise = self._rng.uniform(-1.0, 1.0, size=block.shape)
-                block = block * np.exp(1j * self.phase_flexibility * noise)
+                block = block * np.exp(1j * flex * noise)
                 self.W_in[np.ix_(active, columns)] = block * (1.0 - rate)
 
         # Bound the weights so repeated growth cannot run away, preserving
@@ -313,7 +445,7 @@ class QuantumCortex:
 
     def process(
         self, feature_vector: np.ndarray, label: int, train: bool = True
-    ) -> tuple[bool, int, float]:
+    ) -> tuple[bool, int, float]:  # noqa: FBT001, FBT002
         """Original call shape: ``(was_correct, predicted_label, total_energy)``.
 
         Retained so the MNIST benchmark keeps working unchanged as the

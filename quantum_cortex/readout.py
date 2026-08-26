@@ -72,6 +72,24 @@ class Prediction:
         return float(ranked[0] - ranked[1])
 
     @property
+    def relative(self) -> np.ndarray:
+        """Energies as a share of the strongest class, each independent of the rest.
+
+        The reading to use when classes are **not** mutually exclusive -- one
+        merchant file can draw an offer from several lenders at once, and
+        :attr:`distribution` would force those into competition by making them
+        sum to 1, so a file every lender wants looks identical to a file only
+        one lender wants.
+
+        Each entry is that class's energy over the maximum, so the winner is
+        always 1.0 and the others say how close behind they came.
+        """
+        peak = float(np.max(self.energies)) if len(self.energies) else 0.0
+        if peak <= 0.0:
+            return np.zeros(len(self.energies), dtype=float)
+        return np.asarray(self.energies / peak, dtype=float)
+
+    @property
     def runner_up(self) -> int:
         """The second-choice class. What the cortex would have said instead."""
         if len(self.energies) < 2:

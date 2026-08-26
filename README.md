@@ -211,7 +211,30 @@ prediction = cortex.predict(optics.apply(image))          # score only
 prediction.label          # the winning class
 prediction.distribution   # normalised energy — NOT a calibrated probability
 prediction.margin         # winner minus runner-up: threshold this to abstain
+prediction.relative       # per-class, when classes are NOT exclusive
 prediction.ranked()       # every class, best first
+```
+
+**Several outcomes on one sample.** When classes are independent — one merchant
+file shopped to five lenders draws three offers and two declines — a single
+label cannot express it:
+
+```python
+cortex.observe_multi(features, positives=[0, 3, 7], negatives=[2, 9])
+```
+
+A class in neither set is **unobserved and left untouched**. That third state is
+the point: a lender the file was never submitted to has not declined it, and
+training it as a negative teaches the model your submission habits rather than
+the lenders' credit boxes.
+
+**Weaker evidence should push less.** `weight` scales a sample's plasticity —
+both the magnitude growth and the phase rotation, since this is a phase-Hebbian
+rule and scaling only the first would leave a down-weighted sample rotating at
+full strength:
+
+```python
+cortex.observe(features, defaulted, weight=observed_days / term_days)
 
 cortex.save("cortex.npz")                 # online learning needs to persist
 cortex = QuantumCortex.load("cortex.npz") # and picks up where it left off
