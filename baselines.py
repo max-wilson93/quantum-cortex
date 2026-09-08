@@ -76,12 +76,18 @@ def nearest_centroid_features(split, seed):
 
 def mlp_pixels(split, seed, hidden=(128,), max_iter=200):
     """Upper reference, not a target. A small backprop MLP on raw pixels says
-    roughly what the task allows; it is not what this architecture is for."""
+    roughly what the task allows; it is not what this architecture is for.
+
+    Early stopping on a 10% validation slice of the training set, so the row is
+    a fair reference rather than an arbitrarily truncated one. No test data is
+    involved in the stopping decision.
+    """
     return _fit_and_score(
         f"MLP {hidden}, raw pixels (upper reference)",
-        MLPClassifier(hidden_layer_sizes=hidden, max_iter=max_iter, random_state=seed),
+        MLPClassifier(hidden_layer_sizes=hidden, max_iter=max_iter,
+                      early_stopping=True, n_iter_no_change=10, random_state=seed),
         split.images_train, split.labels_train, split.images_test, split.labels_test,
-        note=f"{max_iter} epochs max",
+        note="early stopping on 10% of train",
     )
 
 

@@ -157,6 +157,11 @@ def main():
         "is what the cortex contributes -- positive or negative.",
         "The **MLP** row is an upper reference for what the task allows, not a "
         "target for this architecture.",
+        "On the `full` preset the seed permutes the training set without "
+        "changing its membership, so the three scikit-learn rows are "
+        "order-insensitive and their spread across seeds is near zero by "
+        "construction. The cortex learns online, one sample at a time, so its "
+        "spread is real.",
         "### Accuracy accounting for the full model",
         "The original README compared the first row below against the third and "
         "reported \"zero overfitting, test > train\". The first row includes the "
