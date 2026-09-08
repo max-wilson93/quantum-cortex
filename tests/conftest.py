@@ -5,6 +5,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import runtime  # noqa: E402,F401  # pins BLAS threads; must precede numpy
+
 import data as data_module  # noqa: E402
 
 # Small but real. Every test is seeded, so results are deterministic.

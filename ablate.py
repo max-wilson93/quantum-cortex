@@ -18,6 +18,8 @@ one prediction out of thousands is not a weak mechanism; it is a mechanism that
 is not connected to anything.
 """
 
+import runtime  # noqa: F401  # pins BLAS threads; must precede numpy
+
 import argparse
 from collections import OrderedDict
 
@@ -197,6 +199,9 @@ def main():
     parser.add_argument("--test", type=int)
     parser.add_argument("--data-path", default=data.DEFAULT_DATA_PATH)
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument("--out", default=report.RESULTS_PATH,
+                        help="results file to write; use separate files when "
+                             "running several of these scripts at once")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -253,7 +258,7 @@ def main():
         "recollection.",
         alternatives_table,
     ])
-    path = report.write_section("ablate", body)
+    path = report.write_section("ablate", body, path=args.out)
     print(f"[write] {path}")
     return 0
 

@@ -19,6 +19,8 @@ Every corruption is applied to the **test** images only; training is always on
 clean data, so these measure robustness rather than augmentation.
 """
 
+import runtime  # noqa: F401  # pins BLAS threads; must precede numpy
+
 import argparse
 from collections import OrderedDict
 
@@ -285,6 +287,9 @@ def main():
     parser.add_argument("--test", type=int)
     parser.add_argument("--data-path", default=data.DEFAULT_DATA_PATH)
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument("--out", default=report.RESULTS_PATH,
+                        help="results file to write; use separate files when "
+                             "running several of these scripts at once")
     args = parser.parse_args()
 
     n_train, n_test = PRESETS[args.preset]
@@ -364,7 +369,7 @@ def main():
     print("\n" + "\n\n".join(sections) + "\n")
 
     if not args.no_write:
-        print(f"[write] {report.write_section('tasks', body)}")
+        print(f"[write] {report.write_section('tasks', body, path=args.out)}")
     return 0
 
 

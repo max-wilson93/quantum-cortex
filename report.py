@@ -109,6 +109,28 @@ def markdown_table(headers, rows, align=None):
     return "\n".join([line([str(h) for h in headers]), sep] + [line(r) for r in rows])
 
 
+def merge_sections(sources, dest=RESULTS_PATH):
+    """Fold sections written to separate files into one results file.
+
+    Scripts that run in parallel each write their own file, because
+    :func:`write_section` rewrites the whole document and two concurrent
+    writers would clobber each other. This copies each section across
+    afterwards, so `results.md` is still assembled entirely by code.
+    """
+    pattern = re.compile(r"<!-- BEGIN (\w+) -->\n(.*?)\n<!-- END \1 -->", re.DOTALL)
+    merged = []
+    for source in sources:
+        try:
+            with open(source, "r", encoding="utf-8") as handle:
+                text = handle.read()
+        except FileNotFoundError:
+            continue
+        for name, body in pattern.findall(text):
+            write_section(name, body, path=dest)
+            merged.append(name)
+    return merged
+
+
 def write_section(name, body, path=RESULTS_PATH):
     """Replace (or append) a delimited section of results.md."""
     begin, end = f"<!-- BEGIN {name} -->", f"<!-- END {name} -->"

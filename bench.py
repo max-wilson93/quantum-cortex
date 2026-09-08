@@ -12,6 +12,8 @@ reports belongs to `fourier_optics.py`, not to the phase machinery.
 Results are written to `results.md`. No number in that file is typed by hand.
 """
 
+import runtime  # noqa: F401  # pins BLAS threads; must precede numpy
+
 import argparse
 from collections import OrderedDict
 
@@ -124,6 +126,9 @@ def main():
     parser.add_argument("--data-path", default=data.DEFAULT_DATA_PATH)
     parser.add_argument("--no-write", action="store_true",
                         help="print the table without touching results.md")
+    parser.add_argument("--out", default=report.RESULTS_PATH,
+                        help="results file to write; use separate files when "
+                             "running several of these scripts at once")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -168,7 +173,7 @@ def main():
         "untrained warm-up, so it is not a train accuracy. The second row is.",
         accounting_table,
     ])
-    path = report.write_section("bench", body)
+    path = report.write_section("bench", body, path=args.out)
     print(f"[write] {path}")
     return 0
 

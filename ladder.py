@@ -14,6 +14,8 @@ remembered, and a later change to the model will move every rung together
 rather than leaving a stale "before" number behind.
 """
 
+import runtime  # noqa: F401  # pins BLAS threads; must precede numpy
+
 import argparse
 from collections import OrderedDict
 
@@ -67,6 +69,9 @@ def main():
     parser.add_argument("--test", type=int)
     parser.add_argument("--data-path", default=data.DEFAULT_DATA_PATH)
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument("--out", default=report.RESULTS_PATH,
+                        help="results file to write; use separate files when "
+                             "running several of these scripts at once")
     args = parser.parse_args()
 
     n_train, n_test = PRESETS[args.preset]
@@ -125,7 +130,7 @@ def main():
         "instead, which is what holographic recording means and what makes the "
         "phase usable at all.",
     ])
-    print(f"[write] {report.write_section('ladder', body)}")
+    print(f"[write] {report.write_section('ladder', body, path=args.out)}")
     return 0
 
 

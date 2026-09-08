@@ -22,6 +22,8 @@ produced the original "zero overfitting, test > train" claim:
 * **test accuracy, plasticity off** -- held out.
 """
 
+import runtime  # noqa: F401  # pins BLAS threads; must precede numpy
+
 import argparse
 import csv
 import os

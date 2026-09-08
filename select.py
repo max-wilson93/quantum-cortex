@@ -19,6 +19,8 @@ The grid is declared in this file, above the code that uses it, and is not
 adjusted after seeing scores.
 """
 
+import runtime  # noqa: F401  # pins BLAS threads; must precede numpy
+
 import argparse
 from collections import OrderedDict
 
@@ -98,6 +100,9 @@ def main():
                         help="training samples used for selection (train split only)")
     parser.add_argument("--data-path", default=data.DEFAULT_DATA_PATH)
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument("--out", default=report.RESULTS_PATH,
+                        help="results file to write; use separate files when "
+                             "running several of these scripts at once")
     args = parser.parse_args()
 
     # n_test=1 keeps the loader honest: this script must not read test data,
@@ -200,7 +205,7 @@ def main():
               str(base.lateral_strength)]]),
         decision,
     ])
-    print(f"\n[write] {report.write_section('select', body)}")
+    print(f"\n[write] {report.write_section('select', body, path=args.out)}")
     return 0
 
 
