@@ -130,6 +130,7 @@ python download_mnist.py       # the dataset is no longer committed
 | `python main.py` | One seeded run; prints online / train / test accuracy separately |
 | `python bench.py` | The model against five baselines, 5 seeds → `results.md` |
 | `python ablate.py` | Each mechanism switched off in turn, plus a linear-readout control → `results.md` |
+| `python ladder.py` | What each Phase 1 repair cost or bought, one rung at a time → `results.md` |
 | `python select.py` | Constants chosen on a validation split carved from **train** → `results.md` |
 | `python tasks.py` | Translation, noise, blur and class-incremental learning → `results.md` |
 | `python -m pytest` | The mechanism invariants |
@@ -170,7 +171,7 @@ looks useful.
 | `experiment.py` | `ModelConfig` and the single train/evaluate loop everything shares |
 | `data.py` | Seeded splits and feature extraction |
 | `baselines.py` | The controls |
-| `bench.py`, `ablate.py`, `select.py`, `tasks.py` | The measurements |
+| `bench.py`, `ablate.py`, `ladder.py`, `select.py`, `tasks.py` | The measurements |
 | `report.py` | Writes `results.md`; no number is typed by hand |
 | `tests/` | One executable claim per mechanism |
 | `ROADMAP.md` | Where this is going and why |
