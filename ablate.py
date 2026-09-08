@@ -34,10 +34,20 @@ PRESETS = {"quick": (12000, 5000), "full": (60000, 10000)}
 ABLATIONS = OrderedDict([
     ("lateral coupling off", (dict(lateral_coupling=False), "+")),
     ("recurrence off (single pass)", (dict(recurrence=False), "0/-")),
+    ("accumulation off (leak = 0)", (dict(leak=0.0), "0/-")),
     ("Kerr nonlinearity off", (dict(kerr=False), "0")),
     ("phase input off", (dict(phase_input=False), "+")),
     ("energy clamp off", (dict(energy_clamp=False), "+")),
     ("ensemble off (1 column)", (dict(ensemble_size=1), "+")),
+])
+
+#: Design alternatives rather than mechanism removals. Reported as plain
+#: deltas: the section 3 verdict rule does not apply to them, and only the
+#: "accumulation off" decomposition of recurrence was foreseen in section 5.
+ALTERNATIVES = OrderedDict([
+    ("legacy model (pre-Phase-1)", "legacy"),
+    ("phase encoding: magnitude (1.3 Option B)", dict(phase_encoding="magnitude")),
+    ("energy mode: normalize (1.4)", dict(energy_mode="normalize")),
 ])
 
 MIN_EFFECT = 0.5  # percentage points; PREREGISTRATION.md section 3, criterion 2
@@ -96,6 +106,8 @@ def run_grid(seeds, n_train, n_test, data_path, verbose=False):
                           for name, (_, predicted) in ABLATIONS.items())
     records["linear readout on same features"] = {
         "deltas": [], "accuracies": [], "identical": [], "predicted": "n/a"}
+    alternatives = OrderedDict((name, {"deltas": [], "accuracies": []})
+                               for name in ALTERNATIVES)
     full_accuracies = []
 
     for seed in seeds:
@@ -116,6 +128,15 @@ def run_grid(seeds, n_train, n_test, data_path, verbose=False):
                   f"delta {full.test_accuracy - result.test_accuracy:+.2f}"
                   f"{'  [identical predictions]' if identical else ''}", flush=True)
 
+        for name, override in ALTERNATIVES.items():
+            config = (reference.legacy(ensemble_size=reference.ensemble_size)
+                      if override == "legacy" else reference.with_(**override))
+            result = run_experiment(config, split, seed)
+            alternatives[name]["accuracies"].append(result.test_accuracy)
+            alternatives[name]["deltas"].append(full.test_accuracy - result.test_accuracy)
+            print(f"  {name:32s} {result.test_accuracy:6.2f}%  "
+                  f"delta {full.test_accuracy - result.test_accuracy:+.2f}", flush=True)
+
         accuracy, predictions = baselines.linear_readout_predictions(split, seed)
         entry = records["linear readout on same features"]
         entry["accuracies"].append(accuracy)
@@ -126,7 +147,18 @@ def run_grid(seeds, n_train, n_test, data_path, verbose=False):
 
         del split
 
-    return full_accuracies, records
+    return full_accuracies, records, alternatives
+
+
+def build_alternatives_table(full_accuracies, alternatives):
+    rows = [["**Full model** (reference)", report.fmt_mean_std(full_accuracies), "--"]]
+    for name, entry in alternatives.items():
+        rows.append([name,
+                     report.fmt_mean_std(entry["accuracies"]),
+                     report.fmt_mean_std(entry["deltas"])])
+    return report.markdown_table(
+        ["Variant", "Test acc %", "Δ vs full"], rows,
+        align=["left", "right", "right"])
 
 
 def build_table(full_accuracies, records):
@@ -176,10 +208,12 @@ def main():
         print(f"[warn] {len(args.seeds)} seed(s). PREREGISTRATION.md fixes the "
               f"reported seed list at 5; this run is exploratory.\n")
 
-    full_accuracies, records = run_grid(args.seeds, n_train, n_test,
-                                        args.data_path, verbose=args.verbose)
+    full_accuracies, records, alternatives = run_grid(
+        args.seeds, n_train, n_test, args.data_path, verbose=args.verbose)
     table = build_table(full_accuracies, records)
+    alternatives_table = build_alternatives_table(full_accuracies, alternatives)
     print("\n" + table + "\n")
+    print(alternatives_table + "\n")
 
     if args.no_write:
         return 0
@@ -210,6 +244,14 @@ def main():
         "The final row is not a mechanism ablation. It is the primary "
         "comparison of `PREREGISTRATION.md` section 4: the whole cortex against "
         "one matrix multiply on the identical features.",
+        "### Design alternatives",
+        "Not mechanism removals, so the section 3 verdict rule does not apply. "
+        "`legacy model` is the architecture exactly as it stood before Phase 1 "
+        "-- no accumulation, the diagonal `W_lat` init that the training step "
+        "deletes, and no input phase -- reproduced from current code, so the "
+        "cost or benefit of the Phase 1 repairs is a measurement rather than a "
+        "recollection.",
+        alternatives_table,
     ])
     path = report.write_section("ablate", body)
     print(f"[write] {path}")

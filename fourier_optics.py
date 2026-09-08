@@ -38,19 +38,43 @@ class FourierOptics:
             mask = (diff < bandwidth) & (radius > 1) & (radius < 14)
             self.masks.append(mask)
 
-    def apply(self, image):
+    def apply(self, image, complex_output=False):
+        """Filter one image through the oriented bandpass bank.
+
+        With ``complex_output=False`` (the default, unchanged) this returns the
+        per-channel magnitude envelope: the phase-invariant part, normalised to
+        a peak of 1.
+
+        With ``complex_output=True`` it returns the same fields *before*
+        ``np.abs()`` -- the analytic signal itself, divided by the same peak
+        magnitude. So ``np.abs(apply(x, complex_output=True))`` reproduces
+        ``apply(x)`` to floating-point round-off (the division happens before
+        rather than after ``np.abs``), and the only added information is the
+        local Gabor phase: edge position and polarity, which the magnitude
+        discards. That phase is roadmap 1.3.
+
+        An ablation that removes phase does so by zeroing it on this same
+        complex array, so both arms of the comparison see an identical input
+        gate and differ only in phase.
+        """
         f_transform = fft.fftshift(fft.fft2(image))
         features = []
         for mask in self.masks:
             filtered_f = f_transform * mask
             spatial_result = fft.ifft2(fft.ifftshift(filtered_f))
             magnitude = np.abs(spatial_result)
-            if np.max(magnitude) > 0:
-                magnitude /= np.max(magnitude)
-            features.append(magnitude.flatten())
+            peak = np.max(magnitude)
+            if complex_output:
+                if peak > 0:
+                    spatial_result = spatial_result / peak
+                features.append(spatial_result.flatten())
+            else:
+                if peak > 0:
+                    magnitude /= peak
+                features.append(magnitude.flatten())
         return np.concatenate(features)
 
-    def apply_batch(self, images, chunk_size=2048):
+    def apply_batch(self, images, chunk_size=2048, complex_output=False):
         """Vectorised ``apply`` over a stack of images.
 
         Returns an ``(n_images, n_masks * rows * cols)`` array whose rows equal
@@ -60,7 +84,8 @@ class FourierOptics:
         images = np.asarray(images, dtype=float).reshape(-1, self.rows, self.cols)
         n_masks = len(self.masks)
         mask_stack = np.stack(self.masks)[None, :, :, :]
-        out = np.empty((images.shape[0], n_masks * self.rows * self.cols), dtype=float)
+        dtype = complex if complex_output else float
+        out = np.empty((images.shape[0], n_masks * self.rows * self.cols), dtype=dtype)
 
         for start in range(0, images.shape[0], chunk_size):
             block = images[start:start + chunk_size]
@@ -69,6 +94,10 @@ class FourierOptics:
             spatial = fft.ifft2(fft.ifftshift(filtered, axes=(2, 3)), axes=(2, 3))
             magnitude = np.abs(spatial)
             peak = magnitude.max(axis=(2, 3), keepdims=True)
-            np.divide(magnitude, peak, out=magnitude, where=peak > 0)
-            out[start:start + block.shape[0]] = magnitude.reshape(block.shape[0], -1)
+            if complex_output:
+                np.divide(spatial, peak, out=spatial, where=peak > 0)
+                out[start:start + block.shape[0]] = spatial.reshape(block.shape[0], -1)
+            else:
+                np.divide(magnitude, peak, out=magnitude, where=peak > 0)
+                out[start:start + block.shape[0]] = magnitude.reshape(block.shape[0], -1)
         return out

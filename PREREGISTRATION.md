@@ -205,5 +205,58 @@ Recorded so the failure modes are named before they can be rationalised:
 
 ## Amendments
 
-*(None. Append below, dated, with the reason and whether the relevant numbers
-were already known at the time of writing.)*
+### A1 — the matched phase rule (2026-09-08)
+
+**Numbers were already known when this was written.** Disclosed as such, and it
+weakens the corresponding claim accordingly.
+
+Section 5 predicted phase input would be worth +1 to +3 points. When Phase 1.3
+landed, the opposite happened: on exploratory runs (3k train / 1.5k test, one or
+two seeds — not the frozen protocol) feeding the local Gabor phase through cost
+roughly **18 points**.
+
+The diagnosis was structural rather than statistical. The readout sums
+`x_i * w_i` over active inputs. The learning rule rotated each weight's phase
+toward **zero**, which is only the right target when the input carries no phase.
+With phase present, weight and input phases are unrelated, so the sum degenerates
+from a coherent `~N` to a random walk of `~sqrt(N)`. The fix is to rotate toward
+the **conjugate of the input phase** — holographic recording, and the thing the
+project's own theory always described. With a zero-phase input it reduces exactly
+to the previous rule, so it cannot be the source of any change measured on
+phase-free input.
+
+**Why this is a mechanism repair and not hyperparameter tuning:** the change is
+derived from what coherent summation requires, not selected by scanning values
+for the best score; it has no free parameter; and it is a strict generalisation
+of the rule it replaces. **Why it is still an amendment:** it was written after
+exploratory test-set numbers had been seen, and the honest record says so.
+
+Consequences, binding:
+
+- `phase_rule="matched"` is the default from here. `phase_rule="toward_zero"`
+  stays available and is reported.
+- Section 5's prediction for phase input **stands unchanged**. It was +1 to +3
+  points and is judged against the frozen 5-seed protocol on the repaired model.
+  If phase still costs accuracy, that prediction is recorded as **wrong**, and
+  section 3's "harmful" branch applies to the mechanism.
+- No exploratory number is reported as a result. Everything in `results.md`
+  comes from the frozen protocol.
+
+### A2 — constant selection on a validation split (2026-09-08)
+
+**Written before the corresponding numbers existed.**
+
+The shipped physics constants were tuned while Kerr, recurrence and lateral
+coupling were all inert — `W_lat` was identically zero, the state was overwritten
+each timestep, and the readout squares the magnitude, so `kerr_constant` was
+never constrained by anything at all. At `system_energy = 40` and
+`kerr_constant = 0.2`, the Kerr shift reaches ~320 radians: many full turns, i.e.
+phase scrambling rather than a nonlinearity. Judging the mechanisms at constants
+that were never selected under them would test a strawman.
+
+`select.py` therefore sweeps `kerr_constant`, `leak` and `lateral_strength` on a
+validation slice carved from the **training** set, exactly as section 2's
+anti-tuning rule permits. It reads no test data. The swept grids are declared in
+the file above the code that uses them, the sweep is reported in full in
+`results.md`, and the selected values are labelled as validation-selected
+wherever they appear.

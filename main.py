@@ -29,7 +29,8 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 import data
-from experiment import ModelConfig, build_ensemble, run_experiment, weight_saturation
+from experiment import (ModelConfig, build_ensemble, features_for, run_experiment,
+                        weight_saturation)
 
 RUN_LOG = "runs.csv"
 
@@ -78,7 +79,9 @@ def main():
           f"columns={args.ensemble}  prototypes/class={args.neurons}")
     print(f"physics: lr={config.learning_rate} flex={config.phase_flexibility} "
           f"gate={config.input_threshold} kerr={config.kerr_constant} "
-          f"energy={config.system_energy} T={config.time_steps}\n")
+          f"energy={config.system_energy} T={config.time_steps} leak={config.leak}")
+    print(f"encoding: phase={config.phase_encoding} rule={config.phase_rule} "
+          f"energy_mode={config.energy_mode} lateral_init={config.lateral_init}\n")
 
     split = data.make_split(args.seed, args.train, args.test, args.data_path)
     result = run_experiment(config, split, seed=args.seed, verbose=not args.quiet,
@@ -103,8 +106,9 @@ def main():
 
     # Where the multiplicative-growth-plus-clip rule ends up (roadmap 3.2).
     reference = build_ensemble(config, split.num_features, split.num_classes, args.seed)[0]
+    train_features = features_for(split, config, "train")
     for i in range(split.n_train):
-        reference.process_image(split.features_train[i], split.labels_train[i], train=True)
+        reference.process_image(train_features[i], split.labels_train[i], train=True)
     stats = weight_saturation(reference)
     print(f"\n=== WEIGHT FIELD (column 0) ===")
     print(f"  pinned at the clip ceiling : {stats['pinned_at_max']:.1f}%")

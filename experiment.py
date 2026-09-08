@@ -30,6 +30,7 @@ class ModelConfig:
     kerr_constant: float = 0.2
     system_energy: float = 40.0
     time_steps: int = 4
+    leak: float = 0.5
 
     # mechanism switches (Phase 0.4)
     lateral_coupling: bool = True
@@ -37,6 +38,13 @@ class ModelConfig:
     kerr: bool = True
     phase_input: bool = True
     energy_clamp: bool = True
+
+    # structure choices (Phase 1)
+    lateral_init: str = "offdiagonal"     # or "diagonal" (the pre-repair bug)
+    lateral_init_scale: float = 0.02
+    phase_encoding: str = "gabor"         # or "magnitude", "none"
+    phase_rule: str = "matched"           # or "toward_zero" (the pre-Phase-1 rule)
+    energy_mode: str = "clamp"            # or "normalize"
 
     # initialisation and plasticity
     init: str = "uniform"
@@ -47,8 +55,26 @@ class ModelConfig:
         """The subset of this config that ``QuantumCortex`` accepts."""
         keys = ("learning_rate", "phase_flexibility", "lateral_strength",
                 "input_threshold", "kerr_constant", "system_energy",
-                "time_steps", "init") + MECHANISMS
+                "time_steps", "leak", "lateral_init", "lateral_init_scale",
+                "phase_encoding", "phase_rule", "energy_mode", "init") + MECHANISMS
         return {k: getattr(self, k) for k in keys}
+
+    @classmethod
+    def legacy(cls, **overrides):
+        """The model exactly as it stood before Phase 1.
+
+        No accumulation, the diagonal W_lat init that the training step
+        deletes, unscaled lateral feedback, and no input phase. This is the
+        "before" column for every Phase 1 repair, runnable from current code
+        rather than only recoverable from git history.
+        """
+        return cls(leak=0.0, lateral_init="diagonal", lateral_strength=1.0,
+                   phase_encoding="none", phase_rule="toward_zero",
+                   energy_mode="clamp", **overrides)
+
+    @property
+    def needs_complex_features(self):
+        return self.phase_encoding == "gabor"
 
     def differences_from(self, other):
         """Fields where this config differs from ``other``, for table labels."""
@@ -102,6 +128,18 @@ def vote(predictions, num_classes):
     return int(np.argmax(counts))
 
 
+def features_for(split, config, which="train"):
+    """Pick the feature array this config's phase encoding needs.
+
+    Only the "gabor" encoding requires the complex fields; every other setting
+    reads the magnitude envelopes, so nothing else pays the memory cost.
+    """
+    if config.needs_complex_features:
+        return (split.complex_features_train if which == "train"
+                else split.complex_features_test)
+    return split.features_train if which == "train" else split.features_test
+
+
 def _pass(ensemble, features, labels, num_classes, train, config=None,
           verbose=False, tag="", log_every=1000):
     """One pass over a dataset. Returns (accuracy_pct, predictions)."""
@@ -128,6 +166,20 @@ def _pass(ensemble, features, labels, num_classes, train, config=None,
     return (correct / n) * 100.0, predictions
 
 
+def train_ensemble(ensemble, features, labels, num_classes, config,
+                   verbose=False, log_every=1000):
+    """One training pass. Returns the online accuracy over that pass."""
+    accuracy, _ = _pass(ensemble, features, labels, num_classes, train=True,
+                        config=config, verbose=verbose, tag="train",
+                        log_every=log_every)
+    return accuracy
+
+
+def evaluate_ensemble(ensemble, features, labels, num_classes):
+    """One evaluation pass with plasticity off. Returns (accuracy, predictions)."""
+    return _pass(ensemble, features, labels, num_classes, train=False)
+
+
 def run_experiment(config, split, seed=None, verbose=False, log_every=1000):
     """Train (optionally), then measure train and test accuracy with plasticity off.
 
@@ -144,10 +196,12 @@ def run_experiment(config, split, seed=None, verbose=False, log_every=1000):
     """
     seed = split.seed if seed is None else seed
     ensemble = build_ensemble(config, split.num_features, split.num_classes, seed)
+    train_features = features_for(split, config, "train")
+    test_features = features_for(split, config, "test")
 
     start = time.time()
     if config.train:
-        online_accuracy, _ = _pass(ensemble, split.features_train, split.labels_train,
+        online_accuracy, _ = _pass(ensemble, train_features, split.labels_train,
                                    split.num_classes, train=True, config=config,
                                    verbose=verbose, tag="train", log_every=log_every)
     else:
@@ -157,9 +211,9 @@ def run_experiment(config, split, seed=None, verbose=False, log_every=1000):
     train_seconds = time.time() - start
 
     start = time.time()
-    train_accuracy, _ = _pass(ensemble, split.features_train, split.labels_train,
+    train_accuracy, _ = _pass(ensemble, train_features, split.labels_train,
                               split.num_classes, train=False)
-    test_accuracy, test_predictions = _pass(ensemble, split.features_test,
+    test_accuracy, test_predictions = _pass(ensemble, test_features,
                                             split.labels_test, split.num_classes,
                                             train=False)
     eval_seconds = time.time() - start

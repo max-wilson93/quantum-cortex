@@ -22,7 +22,14 @@ _SPLIT_CACHE = {}
 
 @dataclass
 class Split:
-    """One seeded train/test split, with pixels and Fourier features."""
+    """One seeded train/test split, with pixels and Fourier features.
+
+    ``features_*`` are the magnitude envelopes -- what the model and every
+    baseline have always used. ``complex_features_*`` are the same fields
+    before ``np.abs()``, carrying the local Gabor phase that roadmap 1.3 feeds
+    to the cortex. They are computed on first access and cached, so a run that
+    does not use phase never pays for them.
+    """
 
     seed: int
     images_train: np.ndarray          # (n_train, 784) pixels in [0, 1]
@@ -33,6 +40,22 @@ class Split:
     features_test: np.ndarray
     num_classes: int = 10
     meta: dict = field(default_factory=dict)
+    _complex_train: np.ndarray = field(default=None, repr=False, compare=False)
+    _complex_test: np.ndarray = field(default=None, repr=False, compare=False)
+
+    @property
+    def complex_features_train(self):
+        if self._complex_train is None:
+            self._complex_train = FourierOptics(shape=(28, 28)).apply_batch(
+                self.images_train, complex_output=True)
+        return self._complex_train
+
+    @property
+    def complex_features_test(self):
+        if self._complex_test is None:
+            self._complex_test = FourierOptics(shape=(28, 28)).apply_batch(
+                self.images_test, complex_output=True)
+        return self._complex_test
 
     @property
     def n_train(self):

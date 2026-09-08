@@ -7,11 +7,16 @@ speedup that quietly alters the model would poison every number in results.md.
 
 `tests/reference_cortex.py` is a frozen transcription of the original loop.
 Both are driven from the same seeded generator and must agree.
+
+Since Phase 1 the production model differs from the reference by design, so
+this comparison runs it under `ModelConfig.legacy()` -- which doubles as a
+check that the pre-repair "before" numbers in results.md stay reproducible.
 """
 
 import numpy as np
 import pytest
 
+from experiment import ModelConfig
 from quantum_cortex import QuantumCortex
 from reference_cortex import ReferenceCortex
 
@@ -20,7 +25,11 @@ N_SAMPLES = 400
 
 @pytest.fixture(scope="module")
 def pair(split):
-    fast = QuantumCortex(split.num_features, split.num_classes, 5, seed=7)
+    # ReferenceCortex is the pre-Phase-1 algorithm, so the production class is
+    # pinned to the configuration that reproduces it. Phase 1 changed the
+    # model deliberately; it did not change this one.
+    fast = QuantumCortex(split.num_features, split.num_classes, 5,
+                         config=ModelConfig.legacy().cortex_config(), seed=7)
     slow = ReferenceCortex(split.num_features, split.num_classes, 5, seed=7)
     fast_predictions, slow_predictions = [], []
     for i in range(min(N_SAMPLES, split.n_train)):
