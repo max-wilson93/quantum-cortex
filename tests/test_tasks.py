@@ -67,6 +67,31 @@ def test_corruptions_preserve_shape(split):
         assert corrupted.shape == images.shape
 
 
+def test_degradation_rate_is_positive_for_a_degrading_curve():
+    """Rate, not slope: positive means accuracy is being lost."""
+    assert tasks.degradation_rate((0, 1, 2, 3), np.array([90.0, 80.0, 70.0, 60.0])) == pytest.approx(10.0)
+    assert tasks.degradation_rate((0, 1, 2, 3), np.array([90.0, 90.0, 90.0, 90.0])) == pytest.approx(0.0)
+
+
+def test_the_more_robust_model_gets_the_favourable_verdict():
+    """Regression test for a sign inversion that reported every robustness
+    verdict backwards.
+
+    Both slopes are negative, so "larger slope" and "degrades less" point in
+    opposite directions, and comparing the slopes directly flipped the answer:
+    a model holding 76% where the other had fallen to 33% was reported as
+    degrading *faster*. Rates make the comparison monotone, and this pins it.
+    """
+    levels = (0.0, 0.1, 0.2, 0.3, 0.4, 0.5)
+    robust = [np.array([88.0, 88.0, 87.0, 85.0, 81.0, 76.0])] * 3
+    fragile = [np.array([91.0, 88.0, 73.0, 56.0, 43.0, 33.0])] * 3
+
+    assert "cortex degrades more slowly" in tasks.curve_table(
+        "t", levels, "Sigma", robust, fragile)
+    assert "cortex degrades faster" in tasks.curve_table(
+        "t", levels, "Sigma", fragile, robust)
+
+
 def test_slope_is_negative_for_a_degrading_curve():
     assert tasks._slope((0, 1, 2, 3), np.array([90.0, 80.0, 70.0, 60.0])) == pytest.approx(-10.0)
     assert tasks._slope((0, 1, 2, 3), np.array([90.0, 90.0, 90.0, 90.0])) == pytest.approx(0.0)

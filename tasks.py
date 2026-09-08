@@ -82,9 +82,20 @@ def blur(flat, sigma):
 def _slope(levels, accuracies):
     """Least-squares slope of accuracy against corruption level (pts per unit).
 
-    More negative means faster degradation.
+    Negative for a degrading curve; more negative means faster degradation.
     """
     return float(np.polyfit(np.asarray(levels, dtype=float), accuracies, 1)[0])
+
+
+def degradation_rate(levels, accuracies):
+    """Points of accuracy lost per unit of corruption. Positive = degrading.
+
+    Stated as a rate rather than a slope on purpose. Comparing two negative
+    slopes invites a sign error -- "larger" and "degrades less" point opposite
+    ways -- and an earlier version of this file made exactly that mistake and
+    reported every robustness verdict backwards.
+    """
+    return -_slope(levels, accuracies)
 
 
 def robustness(split, seed, corrupt, levels, config=None):
@@ -196,9 +207,11 @@ def curve_table(title, levels, unit, cortex_runs, pixel_runs):
         ])
     table = report.markdown_table([unit, "Cortex acc %", "Pixel LR acc %"], rows)
 
-    cortex_slopes = [_slope(levels, run) for run in cortex_runs]
-    pixel_slopes = [_slope(levels, run) for run in pixel_runs]
-    deltas = [p - c for c, p in zip(cortex_slopes, pixel_slopes)]
+    cortex_rates = [degradation_rate(levels, run) for run in cortex_runs]
+    pixel_rates = [degradation_rate(levels, run) for run in pixel_runs]
+    # Both rates are positive (points lost per unit). The cortex is more robust
+    # when it loses fewer points, so pixel_rate - cortex_rate > 0 favours it.
+    deltas = [p - c for c, p in zip(cortex_rates, pixel_rates)]
     mean, low, high = report.paired_ci95(deltas)
 
     if np.isnan(low):
@@ -211,15 +224,47 @@ def curve_table(title, levels, unit, cortex_runs, pixel_runs):
         verdict = "**cortex degrades faster** (contrary to prediction)"
 
     summary = report.markdown_table(
-        ["Degradation slope (pts per unit)", "Value"],
-        [["Cortex", report.fmt_mean_std(cortex_slopes)],
-         ["Pixel logistic regression", report.fmt_mean_std(pixel_slopes)],
+        ["Degradation rate (accuracy points lost per unit)", "Value"],
+        [["Cortex", report.fmt_mean_std(cortex_rates)],
+         ["Pixel logistic regression", report.fmt_mean_std(pixel_rates)],
          ["Difference (pixel − cortex, >0 favours cortex)", report.fmt_mean_std(deltas)],
          ["95% CI on the difference",
           f"[{low:+.3f}, {high:+.3f}]" if not np.isnan(low) else "n/a"],
          ["Verdict", verdict]],
     )
-    return f"### {title}\n\n{table}\n\n{summary}"
+
+    # Both models can bottom out at chance, and a straight line fitted across a
+    # floor understates whichever model fell first. This repeats the comparison
+    # over the levels where both are still above 20% -- POST HOC, not part of
+    # the pre-registered criterion, and reported alongside it rather than
+    # instead of it.
+    floor_note = ""
+    live = [i for i in range(len(levels))
+            if np.mean([r[i] for r in cortex_runs]) > 20
+            and np.mean([r[i] for r in pixel_runs]) > 20]
+    if 1 < len(live) < len(levels):
+        sub_levels = [levels[i] for i in live]
+        sub_cortex = [degradation_rate(sub_levels, [r[i] for i in live]) for r in cortex_runs]
+        sub_pixel = [degradation_rate(sub_levels, [r[i] for i in live]) for r in pixel_runs]
+        sub_deltas = [p - c for c, p in zip(sub_cortex, sub_pixel)]
+        sub_mean, sub_low, sub_high = report.paired_ci95(sub_deltas)
+        floor_note = "\n\n".join([
+            "*Post-hoc, not pre-registered.* Both models reach chance inside this "
+            f"sweep, and a line fitted across the floor flattens whichever fell "
+            f"first. Restricted to levels {sub_levels} where both stay above 20%:",
+            report.markdown_table(
+                ["Degradation rate over the unsaturated range", "Value"],
+                [["Cortex", report.fmt_mean_std(sub_cortex)],
+                 ["Pixel logistic regression", report.fmt_mean_std(sub_pixel)],
+                 ["Difference (>0 favours cortex)", report.fmt_mean_std(sub_deltas)],
+                 ["95% CI on the difference",
+                  f"[{sub_low:+.3f}, {sub_high:+.3f}]" if not np.isnan(sub_low) else "n/a"]]),
+        ])
+
+    parts = [f"### {title}", table, summary]
+    if floor_note:
+        parts.append(floor_note)
+    return "\n\n".join(parts)
 
 
 def incremental_table(runs, blocks):
