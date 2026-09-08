@@ -203,6 +203,89 @@ Recorded so the failure modes are named before they can be rationalised:
 
 ---
 
+## Outcome
+
+Recorded after the frozen protocol ran (5 seeds, 12,000 train / 5,000 test).
+Numbers are in [`results.md`](results.md) and are not repeated here, so this
+section cannot go stale against them.
+
+### Section 4, the primary comparison: **cortex loses**
+
+The linear readout on the identical Fourier features beats the full model by
+roughly nine points, with the paired interval nowhere near zero. The
+front-end, not the cortex, is what makes this feature space good: a single
+matrix multiply on those features also beats a small MLP on raw pixels.
+
+### Section 3, per mechanism
+
+| Mechanism | Predicted | Measured | Verdict under the rule |
+|---|---|---|---|
+| Lateral coupling | small positive | interval spans zero | **dead** |
+| Recurrence | no effect or slightly negative | interval spans zero | **dead** (prediction correct) |
+| Accumulation (leak) | no effect or slightly negative | interval spans zero | **dead** (prediction correct) |
+| Kerr | no effect without phase | interval spans zero | **dead** (prediction correct) |
+| Phase input | **+1 to +3 points** | removing it *helps*, interval excludes zero | **harmful** — prediction wrong |
+| Energy clamp | small positive | removing it costs about four points | **earns its place** |
+| Ensemble of 3 | under 0.5 pt, fails its threshold | interval spans zero | **dead** (prediction correct) |
+
+Five of the seven predictions in section 5 were correct. The one that matters
+most was wrong: phase input was predicted to be worth +1 to +3 points and
+instead costs about three. Amendment A1 was written before this number existed
+and deliberately left that prediction standing so it could be scored; it is
+scored **wrong**.
+
+The energy clamp is the one mechanism that earns its place, and it earns it
+only *because* of Phase 1. Before the state accumulated, the clamp was a
+uniform rescale of a state that was discarded every timestep, and it could not
+change a prediction at all. Making the loop a resonator gave it something to
+regulate.
+
+### Section 7, the harder tasks
+
+- **Translation.** The pre-registered full-range comparison says the cortex
+  degrades *faster* — prediction wrong. But both models fall to chance inside
+  the sweep, and a line fitted across that floor flattens whichever fell first.
+  Restricted post-hoc to the range where both stay above 20%, the cortex
+  degrades markedly more slowly. Both are reported; the pre-registered one is
+  the one that counts, and the post-hoc one is labelled as such.
+- **Noise.** Cortex degrades more slowly, interval excluding zero. **Prediction
+  correct**, and by a wide margin.
+- **Blur.** Cortex degrades *faster*. **Prediction wrong.**
+- **Class-incremental.** On the pre-registered metric — points lost on the
+  first class block — the interval spans zero: **no difference**, and the
+  prediction of a large win is **not supported**. The metric turned out to be
+  poorly chosen: both models end near the floor on that block, and the MLP's
+  seed-to-seed spread is enormous. On overall accuracy across all classes seen,
+  which was reported but not pre-registered as the criterion, the cortex is
+  around three times the MLP and far more stable across seeds. That is
+  suggestive, it is not what was registered, and it does not get promoted to
+  the headline.
+
+### Which branch
+
+**Branch B.** Phase encoding and recurrence do not beat the linear-readout
+ablation; they do not beat anything. The honest result is the one drafted in
+advance:
+
+> A Gabor-style spectral front-end plus a local Hebbian classifier, competitive
+> with a linear model at lower inference cost, with the phase machinery
+> contributing nothing at this scale.
+
+with one correction the numbers force: "contributing nothing" is too kind to
+the phase machinery, which contributes negatively, and "competitive with a
+linear model" is not supported either — the linear model wins by nine points.
+The cost claim in that sentence remains unmeasured and is therefore not made.
+
+The committed consequence for a dead mechanism is deletion from the code and
+the README, not de-emphasis. That is pending an explicit decision by the
+repository owner, because roadmap Phase 3 plans to *rebuild* several of these
+mechanisms on different principles (3.1 phase as spike latency, 3.4 Kuramoto
+phase coupling), and deleting them now would discard the scaffolding those
+tasks build on. The measurements stand either way; what is not permitted is
+leaving the README claiming these mechanisms do work.
+
+---
+
 ## Amendments
 
 ### A1 — the matched phase rule (2026-09-08)
