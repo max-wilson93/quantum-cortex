@@ -74,6 +74,22 @@ def best(results):
     return max(results, key=lambda value: float(np.mean(results[value])))
 
 
+def flatness(results):
+    """Is this sweep distinguishable from flat?
+
+    Compares the spread of the axis (best mean minus worst mean) against the
+    seed-to-seed spread within a single setting. Picking the argmax of a
+    surface that is flat relative to seed noise is tuning on noise, and this
+    repository does not do that quietly.
+    """
+    means = {value: float(np.mean(scores)) for value, scores in results.items()}
+    spans = [float(np.std(scores, ddof=1)) if len(scores) > 1 else 0.0
+             for scores in results.values()]
+    axis_range = max(means.values()) - min(means.values())
+    seed_spread = float(np.mean(spans))
+    return axis_range, seed_spread, axis_range <= 2 * seed_spread
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -94,6 +110,8 @@ def main():
 
     base = ModelConfig(ensemble_size=1)
 
+    shipped = ModelConfig(ensemble_size=1)
+
     print("kerr_constant:")
     kerr = sweep(splits, args.seeds, base, "kerr_constant", KERR_GRID, cuts)
     base = base.with_(kerr_constant=best(kerr))
@@ -106,8 +124,22 @@ def main():
     lateral = sweep(splits, args.seeds, base, "lateral_strength", LATERAL_GRID, cuts)
     base = base.with_(lateral_strength=best(lateral))
 
-    print(f"\nselected: kerr_constant={base.kerr_constant}  leak={base.leak}  "
+    sweeps = OrderedDict([("kerr_constant", kerr), ("leak", leak),
+                          ("lateral_strength", lateral)])
+    verdicts = OrderedDict((axis, flatness(results)) for axis, results in sweeps.items())
+
+    print("\nargmax of each sweep: "
+          f"kerr_constant={base.kerr_constant}  leak={base.leak}  "
           f"lateral_strength={base.lateral_strength}")
+    print("\nis any of that distinguishable from flat?")
+    for axis, (axis_range, seed_spread, flat) in verdicts.items():
+        print(f"  {axis:18s} range {axis_range:.2f} pt across the grid vs "
+              f"{seed_spread:.2f} pt seed spread -> "
+              f"{'FLAT: argmax is noise' if flat else 'a real difference'}")
+    if all(flat for _, _, flat in verdicts.values()):
+        print("\nEvery axis is flat. Keeping the shipped constants; adopting these\n"
+              "argmaxes would be tuning on noise, and a constant that cannot move\n"
+              "validation accuracy is a constant the model does not depend on.")
 
     if args.no_write:
         return 0
@@ -117,9 +149,32 @@ def main():
             [name, "Validation acc %"],
             [[str(value), report.fmt_mean_std(scores)] for value, scores in results.items()])
 
+    all_flat = all(flat for _, _, flat in verdicts.values())
+    verdict_table = report.markdown_table(
+        ["Constant", "Range across the grid", "Seed spread", "Distinguishable?"],
+        [[axis, f"{axis_range:.2f} pt", f"{seed_spread:.2f} pt",
+          "no -- flat" if flat else "yes"]
+         for axis, (axis_range, seed_spread, flat) in verdicts.items()])
+
+    if all_flat:
+        decision = (
+            "**No constant in these grids moves validation accuracy beyond seed "
+            "noise, so the shipped values are kept.** Adopting the argmax of a "
+            "flat surface would be tuning on noise. This is itself a result: a "
+            "constant that cannot move accuracy anywhere in its range is one the "
+            "model does not depend on, and `kerr_constant` spanning three orders "
+            "of magnitude for less than the seed spread says the Kerr term is "
+            "doing no work. `PREREGISTRATION.md` section 3 decides what happens "
+            "to a mechanism like that; `ablate.py` supplies the number.")
+    else:
+        decision = ("At least one axis is distinguishable from flat; the selected "
+                    "values are adopted and labelled as validation-selected wherever "
+                    "they appear.")
+
     body = "\n\n".join([
         "## Constant selection on a validation split",
         report.provenance("select.py", args.seeds, cuts[0][0], cuts[0][1],
+                          holdout_label="validation",
                           extra=["**No test data is read by this script.** The "
                                  "validation slice is carved off the training set.",
                                  "**Why:** the shipped constants were tuned while "
@@ -133,12 +188,17 @@ def main():
         "### Kerr constant", axis_table("kerr_constant", kerr),
         "### Leak", axis_table("leak", leak),
         "### Lateral strength", axis_table("lateral_strength", lateral),
-        "### Selected",
+        "### Is any of this distinguishable from noise?",
+        "A sweep whose whole range is smaller than the seed-to-seed spread has "
+        "not found a best value; it has found that the axis does not matter.",
+        verdict_table,
         report.markdown_table(
-            ["Constant", "Shipped value", "Selected on validation"],
-            [["kerr_constant", "0.2", str(base.kerr_constant)],
-             ["leak", "0.5 (Phase 1 default)", str(base.leak)],
-             ["lateral_strength", "0.16", str(base.lateral_strength)]]),
+            ["Constant", "Shipped value", "Argmax on validation"],
+            [["kerr_constant", str(shipped.kerr_constant), str(base.kerr_constant)],
+             ["leak", str(shipped.leak), str(base.leak)],
+             ["lateral_strength", str(shipped.lateral_strength),
+              str(base.lateral_strength)]]),
+        decision,
     ])
     print(f"\n[write] {report.write_section('select', body)}")
     return 0

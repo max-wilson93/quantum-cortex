@@ -29,7 +29,8 @@ from sklearn.neural_network import MLPClassifier
 
 import data
 import report
-from experiment import ModelConfig, build_ensemble, evaluate_ensemble, train_ensemble
+from experiment import (ModelConfig, build_ensemble, evaluate_ensemble, features_for,
+                        train_ensemble)
 from fourier_optics import FourierOptics
 
 PRESETS = {"quick": (12000, 5000), "full": (60000, 10000)}
@@ -88,9 +89,10 @@ def robustness(split, seed, corrupt, levels, config=None):
     """Train on clean data, evaluate both models across corruption levels."""
     config = config or ModelConfig()
     optics = FourierOptics(shape=(28, 28))
+    complex_needed = config.needs_complex_features
 
     ensemble = build_ensemble(config, split.num_features, split.num_classes, seed)
-    train_ensemble(ensemble, split.features_train, split.labels_train,
+    train_ensemble(ensemble, features_for(split, config, "train"), split.labels_train,
                    split.num_classes, config)
 
     pixel_model = LogisticRegression(max_iter=1000, random_state=seed)
@@ -99,7 +101,9 @@ def robustness(split, seed, corrupt, levels, config=None):
     cortex_curve, pixel_curve = [], []
     for level in levels:
         corrupted = corrupt(split.images_test, level)
-        features = optics.apply_batch(corrupted)
+        # The corrupted features must be built the same way the model was
+        # trained -- complex when the config carries Gabor phase, real otherwise.
+        features = optics.apply_batch(corrupted, complex_output=complex_needed)
         accuracy, _ = evaluate_ensemble(ensemble, features, split.labels_test,
                                         split.num_classes)
         cortex_curve.append(accuracy)
@@ -130,6 +134,8 @@ def class_incremental(split, seed, blocks=CLASS_BLOCKS, config=None):
     """
     config = config or ModelConfig()
     rng = np.random.default_rng(seed)
+    cortex_train = features_for(split, config, "train")
+    cortex_test = features_for(split, config, "test")
 
     ensemble = build_ensemble(config, split.num_features, split.num_classes, seed)
     cortex_parameters = 2 * ensemble[0].W_in.size
@@ -146,18 +152,22 @@ def class_incremental(split, seed, blocks=CLASS_BLOCKS, config=None):
     for step, block in enumerate(blocks):
         train_mask = np.isin(split.labels_train, block)
         order = rng.permutation(int(train_mask.sum()))
-        features = split.features_train[train_mask][order]
         labels = split.labels_train[train_mask][order]
 
-        train_ensemble(ensemble, features, labels, split.num_classes, config)
+        train_ensemble(ensemble, cortex_train[train_mask][order], labels,
+                       split.num_classes, config)
         # One pass per block for the MLP too, so neither model gets more
-        # exposure to a block than the other.
-        mlp.partial_fit(features, labels, classes=all_classes)
+        # exposure to a block than the other. The MLP gets the magnitude
+        # features: scikit-learn cannot take complex input, and splitting the
+        # analytic signal into real and imaginary parts would double its input
+        # dimension and break the parameter matching.
+        mlp.partial_fit(split.features_train[train_mask][order], labels,
+                        classes=all_classes)
 
         seen = np.isin(split.labels_test, np.concatenate(blocks[:step + 1]))
         for mask, cortex_store, mlp_store in ((first_block, cortex_first, mlp_first),
                                               (seen, cortex_seen, mlp_seen)):
-            accuracy, _ = evaluate_ensemble(ensemble, split.features_test[mask],
+            accuracy, _ = evaluate_ensemble(ensemble, cortex_test[mask],
                                             split.labels_test[mask], split.num_classes)
             cortex_store.append(accuracy)
             mlp_store.append(float(np.mean(mlp.predict(split.features_test[mask])
@@ -253,10 +263,12 @@ def incremental_table(runs, blocks):
          ["Verdict", verdict]],
     )
     note = (f"The MLP has {runs[0]['hidden_units']} hidden units, chosen so its "
-            "parameter count matches the cortex's complex `W_in`. Both models keep "
-            "a full 10-way output and neither is told which block a test sample "
-            "came from, so this is class-incremental, not the easier "
-            "task-incremental variant.")
+            "parameter count matches the cortex's complex `W_in` (two real numbers "
+            "per entry). Both models keep a full 10-way output and neither is told "
+            "which block a test sample came from, so this is class-incremental, not "
+            "the easier task-incremental variant. The MLP is given the magnitude "
+            "features; scikit-learn cannot take complex input, so when the cortex is "
+            "configured for Gabor phase it sees strictly more than the MLP does.")
     return f"### Class-incremental learning\n\n{table}\n\n{summary}\n\n{note}"
 
 
