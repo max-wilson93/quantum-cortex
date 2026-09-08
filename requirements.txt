@@ -1,0 +1,8 @@
+# Core model + harness
+numpy>=1.24
+
+# Baselines in bench.py (logistic regression, nearest centroid, MLP reference)
+scikit-learn>=1.3
+
+# Invariant tests (tests/)
+pytest>=7.0
