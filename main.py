@@ -1,154 +1,124 @@
-import time
+"""Train and evaluate the cortex on one seeded run.
+
+    python main.py                       # 60k/10k, seed 0
+    python main.py --seed 3 --train 12000 --test 5000
+    python main.py --visualize           # ASCII magnitude fields after training
+
+For the numbers that get reported, use `bench.py` (model vs baselines) and
+`ablate.py` (what each mechanism is worth). Both run 5 seeds and write
+`results.md`. This script is the single-run entry point.
+
+Accuracy accounting (roadmap 0.1)
+---------------------------------
+Three numbers, kept apart, because conflating the first and the third is what
+produced the original "zero overfitting, test > train" claim:
+
+* **online accuracy** -- a running average over the training stream. It
+  includes the untrained warm-up, so it is systematically lower than the
+  model's real training accuracy and is not comparable to a test number.
+* **train accuracy, plasticity off** -- a second pass over the same training
+  samples, after learning. This is the number that belongs next to test
+  accuracy.
+* **test accuracy, plasticity off** -- held out.
+"""
+
+import argparse
 import csv
 import os
-import numpy as np
-from mnist_loader import LocalMNISTLoader
-from quantum_cortex import QuantumCortex
-from fourier_optics import FourierOptics
+from dataclasses import asdict
+from datetime import datetime, timezone
 
-def log_experiment(train_acc, test_acc, duration, config, notes):
-    filename = "quantum_validation_log.csv"
-    file_exists = os.path.isfile(filename)
-    
-    from datetime import datetime
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    with open(filename, mode='a', newline='') as file:
-        writer = csv.writer(file)
-        if not file_exists:
-            writer.writerow(["Timestamp", "Train_Acc", "Test_Acc", "Duration", "Config", "Notes"])
-        writer.writerow([
-            timestamp,
-            f"{train_acc:.2f}%",
-            f"{test_acc:.2f}%",
-            f"{duration:.1f}s",
-            str(config),
-            notes
-        ])
-    print(f"\n[Log] Validation results saved to {filename}")
+import data
+from experiment import ModelConfig, build_ensemble, run_experiment, weight_saturation
 
-def run_validation():
-    data_path = r"./mnist_data" #ubuntu implementation
-    loader = LocalMNISTLoader(data_path)
-    
-    # --- THE 90% WINNING CONFIG ---
-    NEURONS_PER_CLASS = 5
-    TRAIN_SAMPLES = 60000
-    
-    physics_config = {
-        'learning_rate':    0.09,
-        'phase_flexibility': 0.1,
-        'lateral_strength':  0.16,
-        'input_threshold':   0.7,  # The High Gate
-        'kerr_constant':     0.2,
-        'system_energy':     40.0  # High Gain
+RUN_LOG = "runs.csv"
+
+
+def log_run(result, path=RUN_LOG):
+    """Append one row per run. Columns are stable so runs stay comparable."""
+    exists = os.path.isfile(path)
+    row = {
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "seed": result.seed,
+        "n_train": result.n_train,
+        "n_test": result.n_test,
+        "online_accuracy": round(result.online_accuracy, 4),
+        "train_accuracy_plasticity_off": round(result.train_accuracy, 4),
+        "test_accuracy": round(result.test_accuracy, 4),
+        "train_seconds": round(result.train_seconds, 2),
+        "eval_seconds": round(result.eval_seconds, 2),
+        "config": str(asdict(result.config)),
     }
-    
-    try:
-        print(f"--- Quantum Cortex Validation Run ---")
-        print(f"Physics: {physics_config}")
-        
-        # 1. LOAD TRAINING DATA
-        print("-> Loading Training Data...")
-        train_images = loader.load_images('train-images.idx3-ubyte')
-        train_labels = loader.load_labels('train-labels.idx1-ubyte')
-        
-        # Shuffle Training Data
-        indices = np.arange(len(train_images))
-        np.random.shuffle(indices)
-        train_images = train_images[indices]
-        train_labels = train_labels[indices]
+    with open(path, "a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(row))
+        if not exists:
+            writer.writeheader()
+        writer.writerow(row)
+    return path
 
-        # 2. LOAD TEST DATA (The Final Exam)
-        print("-> Loading Test Data...")
-        try:
-            test_images = loader.load_images('t10k-images.idx3-ubyte')
-            test_labels = loader.load_labels('t10k-labels.idx1-ubyte')
-        except:
-            print("!! TEST DATA NOT FOUND !!")
-            print("Please ensure 't10k-images.idx3-ubyte' and 't10k-labels.idx1-ubyte' are in the folder.")
-            return
 
-        # 3. INITIALIZE TRINITY
-        print("-> Initializing Quantum Trinity...")
-        optics = FourierOptics(shape=(28, 28))
-        
-        # We use 3 distinct brains for the Ensemble
-        cortex_A = QuantumCortex(3136, 10, NEURONS_PER_CLASS, config=physics_config)
-        cortex_B = QuantumCortex(3136, 10, NEURONS_PER_CLASS, config=physics_config)
-        cortex_C = QuantumCortex(3136, 10, NEURONS_PER_CLASS, config=physics_config)
-        
-        # --- PHASE 1: TRAINING ---
-        print(f"\n=== PHASE 1: TRAINING ({TRAIN_SAMPLES} samples) ===")
-        correct_count = 0
-        start_time = time.time()
-        
-        for i in range(TRAIN_SAMPLES):
-            img_2d = train_images[i].reshape(28, 28)
-            features = optics.apply(img_2d)
-            label = train_labels[i]
-            
-            # Train (Plasticity ON)
-            _, pred_a, _ = cortex_A.process_image(features, label, train=True)
-            _, pred_b, _ = cortex_B.process_image(features, label, train=True)
-            _, pred_c, _ = cortex_C.process_image(features, label, train=True)
-            
-            # Voting
-            votes = np.zeros(10)
-            votes[pred_a] += 1; votes[pred_b] += 1; votes[pred_c] += 1
-            ensemble_pred = np.argmax(votes)
-            
-            if ensemble_pred == label: correct_count += 1
-            
-            # Annealing
-            if (i + 1) % 1000 == 0:
-                progress = i / TRAIN_SAMPLES
-                cortex_A.decay_learning_rate(progress)
-                cortex_B.decay_learning_rate(progress)
-                cortex_C.decay_learning_rate(progress)
-                
-                acc = (correct_count / (i + 1)) * 100
-                print(f"Train {i+1} | Acc: {acc:.2f}% | Vote: {ensemble_pred}/{label}")
+def main():
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--train", type=int, default=60000, help="training samples")
+    parser.add_argument("--test", type=int, default=10000, help="test samples")
+    parser.add_argument("--neurons", type=int, default=5, help="prototypes per class")
+    parser.add_argument("--ensemble", type=int, default=3, help="cortical columns")
+    parser.add_argument("--data-path", default=data.DEFAULT_DATA_PATH)
+    parser.add_argument("--visualize", action="store_true")
+    parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--no-log", action="store_true")
+    args = parser.parse_args()
 
-        train_acc = (correct_count / TRAIN_SAMPLES) * 100
-        print(f"Training Complete. Final Train Acc: {train_acc:.2f}%")
+    config = ModelConfig(ensemble_size=args.ensemble, neurons_per_class=args.neurons)
 
-        # --- PHASE 2: TESTING ---
-        print(f"\n=== PHASE 2: VALIDATION (10,000 samples) ===")
-        print("Plasticity OFF. Testing Generalization...")
-        
-        test_correct = 0
-        
-        for i in range(len(test_images)):
-            img_2d = test_images[i].reshape(28, 28)
-            features = optics.apply(img_2d)
-            label = test_labels[i]
-            
-            # Test (Plasticity OFF)
-            _, pred_a, _ = cortex_A.process_image(features, label, train=False)
-            _, pred_b, _ = cortex_B.process_image(features, label, train=False)
-            _, pred_c, _ = cortex_C.process_image(features, label, train=False)
-            
-            votes = np.zeros(10)
-            votes[pred_a] += 1; votes[pred_b] += 1; votes[pred_c] += 1
-            ensemble_pred = np.argmax(votes)
-            
-            if ensemble_pred == label: test_correct += 1
-            
-            if (i + 1) % 1000 == 0:
-                print(f"Test {i+1} | Current Test Acc: {(test_correct / (i+1))*100:.2f}%")
+    print("--- Coherent Phase Cortex: single run ---")
+    print(f"seed={args.seed}  train={args.train:,}  test={args.test:,}  "
+          f"columns={args.ensemble}  prototypes/class={args.neurons}")
+    print(f"physics: lr={config.learning_rate} flex={config.phase_flexibility} "
+          f"gate={config.input_threshold} kerr={config.kerr_constant} "
+          f"energy={config.system_energy} T={config.time_steps}\n")
 
-        test_acc = (test_correct / len(test_images)) * 100
-        total_time = time.time() - start_time
-        
-        print(f"\n=== FINAL RESULTS ===")
-        print(f"Training Accuracy: {train_acc:.2f}%")
-        print(f"Test Accuracy:     {test_acc:.2f}%")
-        
-        log_experiment(train_acc, test_acc, total_time, physics_config, "Validation Run")
+    split = data.make_split(args.seed, args.train, args.test, args.data_path)
+    result = run_experiment(config, split, seed=args.seed, verbose=not args.quiet,
+                            log_every=5000)
 
-    except Exception as e:
-        print(f"ERROR: {e}")
+    print("\n=== ACCURACY ACCOUNTING ===")
+    print(f"  online accuracy during learning : {result.online_accuracy:6.2f}%   "
+          f"(running average, includes untrained warm-up -- NOT a train accuracy)")
+    print(f"  train accuracy, plasticity off  : {result.train_accuracy:6.2f}%   "
+          f"(second pass over the same samples)")
+    print(f"  test accuracy,  plasticity off  : {result.test_accuracy:6.2f}%   "
+          f"(held out)")
+
+    gap = result.train_accuracy - result.test_accuracy
+    print(f"\n  generalisation gap (train - test): {gap:+.2f} points")
+    if gap > 0:
+        print("  The model fits its training data better than held-out data, "
+              "as expected.\n  The original 'test > train, zero overfitting' claim "
+              "came from comparing\n  the first number against the third.")
+
+    print(f"\n  train {result.train_seconds:.1f}s  |  eval {result.eval_seconds:.1f}s")
+
+    # Where the multiplicative-growth-plus-clip rule ends up (roadmap 3.2).
+    reference = build_ensemble(config, split.num_features, split.num_classes, args.seed)[0]
+    for i in range(split.n_train):
+        reference.process_image(split.features_train[i], split.labels_train[i], train=True)
+    stats = weight_saturation(reference)
+    print(f"\n=== WEIGHT FIELD (column 0) ===")
+    print(f"  pinned at the clip ceiling : {stats['pinned_at_max']:.1f}%")
+    print(f"  never moved from init      : {stats['never_moved']:.1f}%")
+    print(f"  mean magnitude             : {stats['mean']:.4f}")
+
+    if args.visualize:
+        for digit in range(10):
+            reference.visualize_cortex_ascii(digit)
+
+    if not args.no_log:
+        print(f"\n[log] {log_run(result)}")
+    return 0
+
 
 if __name__ == "__main__":
-    run_validation()
+    raise SystemExit(main())
