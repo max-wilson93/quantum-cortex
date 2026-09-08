@@ -89,10 +89,23 @@ Stating the limits before a reader has to find them.
   FFT front-end and the phase rotations are natively optical; `W_in^T x` is a
   dense matrix multiply, which on photonic hardware means an MZI mesh — the same
   thing this project's README once criticised competitors for.
-- **Not yet demonstrated on few-shot or continual learning.** The
-  class-incremental result is the most likely genuine win and is measured in
-  `results.md`, but a prediction registered in advance is not a result until the
-  table says so.
+- **Not carried by its phase machinery.** This was the project's central claim
+  and it did not survive measurement. With the local Gabor phase reaching the
+  cortex and a learning rule able to store it, switching phase off *improves*
+  accuracy. Every other mechanism — lateral coupling, recurrence, accumulation,
+  the Kerr nonlinearity, the three-column ensemble — changes the result by an
+  amount indistinguishable from seed noise.
+- **Not yet demonstrated on continual learning.** This was predicted in advance
+  to be the most likely genuine win. On the pre-registered metric it came out
+  indistinguishable from a parameter-matched MLP. A secondary measurement is
+  more favourable, but it was not the registered criterion and is not promoted
+  to a headline.
+
+Where the model *is* strong is robustness, not accuracy: it degrades far more
+gracefully than a pixel-space linear model under additive noise, and under
+translation across the range where both are still above chance. That is what a
+shift-invariant spectral front-end should buy, and it is the part of the
+original thesis the measurements support.
 
 ---
 
@@ -108,11 +121,33 @@ cortex saw it.
 class of silent failure cannot come back. A mechanism that is dead is marked
 `xfail(strict=True)`: the suite stays green, the marker is a precise statement of
 what is broken, and the moment a repair lands the test passes, strict mode turns
-that into a failure, and the marker has to be deleted. `ablate.py` then reports
-what each live mechanism is actually worth.
+that into a failure, and the marker has to be deleted.
 
-Run `python -m pytest` to see the current state, and read `results.md` for the
-numbers.
+They are all connected now. **Connecting them did not make them useful.** With
+every mechanism live and measured over five seeds against criteria fixed in
+advance:
+
+| Mechanism | Does removing it change accuracy? |
+|---|---|
+| Lateral coupling | no — confidence interval spans zero |
+| Recurrence | no |
+| State accumulation | no |
+| Kerr nonlinearity | no |
+| Ensemble of three columns | no |
+| **Phase input** | **yes — removing it makes the model better** |
+| **Energy homeostasis** | **yes — removing it makes the model worse** |
+
+Only the energy clamp earns its place, and only because of the repairs: before
+the state accumulated, it was a uniform rescale of a state that was discarded
+every timestep, and it could not change a prediction at all.
+
+The repairs also cost accuracy overall. The pre-Phase-1 model, reproducible
+today as `ModelConfig.legacy()`, scores higher than the repaired one. That is
+recorded rather than hidden, and `ladder.py` shows where it went.
+
+Run `python -m pytest` for the current state and read `results.md` for the
+numbers. The verdicts and what follows from them are in
+[`PREREGISTRATION.md`](PREREGISTRATION.md), section "Outcome".
 
 ---
 
